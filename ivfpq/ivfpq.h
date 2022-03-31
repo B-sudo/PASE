@@ -77,7 +77,7 @@ typedef struct CentroidTuple {
   BlockNumber     head_ivl_blkno;
   uint32          inverted_list_size;
   float4          vector[FLEXIBLE_ARRAY_MEMBER];
-  float4          pq_vector[FLEXIBLE_ARRAY_MEMBER];
+  float4          pq_vector[FLEXIBLE_ARRAY_MEMBER]; //partition_num * pq_centroid_num * (dimension / partiton_num)
 } CentroidTuple;
 
 // Tuple for inverted list
@@ -111,6 +111,7 @@ typedef struct CentroidSearchItem {
   BlockNumber cblkno;
   OffsetNumber offset;
   BlockNumber head_ivl_blkno;
+  CentroidTuple *ctup;   //ivfflat does not need centroid vectors in searchitem, but ivfpq need.
   float distance;
 } CentroidSearchItem;
 
@@ -210,8 +211,6 @@ extern void FlushBufferPage(Relation index, Buffer buffer, bool needUnLock);
 extern bytea *ivfpq_options(Datum reloptions, bool validate);
 extern float SearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
     Centroids centroids, int *minPos);
-extern void InvertedListFormEncodedTuple(IvfpqState *state, InvertedListRawTuple *tuple, InvertedListTuple *encoded_tuple
-    Centroids centroids, int minPos);
 extern int PairingHeapCentroidCompare(const pairingheap_node *a,
     const pairingheap_node *b, void *arg);
 extern void SearchKNNInvertedListFromCentroidPages(

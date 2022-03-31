@@ -115,49 +115,6 @@ SearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
   return minDistance;
 }
 
-void
-InvertedListFormEncodedTuple(IvfpqState *state, InvertedListRawTuple *tuple, InvertedListTuple *encoded_tuple, 
-    Centroids centroids, int minPos) {
-    //TODO omp for encoding in different subvector space
-    CentroidTuple *ctup;
-    float4 *residual;
-    float minDistance;
-    int i, j;
-    int dim = centroids->dim;
-    int parnum = centroids->partition_num;
-    int pqnum = centroids->pq_centroid_num; //pqnum <= 256
-    int subdim;
-    float4 *subvec, *pqvec;
-    uint8_t code;
-    float dis;
-
-    //there is a centroid vector and pq_centroids vectors in ctup.
-    ctup = (CentroidTuple *)((char*)centroids->ctups + minPos * state->size_of_centroid_tuple);
-
-    residual = (float4 *)palloc0(sizeof(float4) * dim);
-    for (i = 0; i < dim; i++) 
-        residual[i] = tuple->vector[i] - ctup->vector[i];
-
-    if (dim % parnum != 0)
-      elog(ERROR, "Partition num is not a factor of dimension");
-    
-    subdim = dim / parnum;
-
-    for (i = 0; i < parnum; i++) {
-      subvec = tuple->vector + i * subdim;
-      pqvec = ctup->pq_vector + i * subdim * pqnum;
-      minDistance = FLT_MAX;
-      for (j = 0; j < pqnum; j++) {
-          dis = fvec_L2sqr(subvec, pqvec + j * subdim, subdim);
-          if (dis < minDistance) {
-            minDistance = dis;
-            code = (uint8_t)j;
-          }
-      }
-      encoded_tuple->encoded_vector[i] = code;
-    }
-}
-
 int
 PairingHeapCentroidCompare(const pairingheap_node *a,
     const pairingheap_node *b, void *arg) {
@@ -220,6 +177,8 @@ SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
           item->offset = offset;
           item->head_ivl_blkno = ctup->head_ivl_blkno;
           item->distance = dis;
+          item->ctup = (CentroidTuple *)palloc0(state->size_of_centroid_tuple);
+          memcpy((Pointer)item->ctup, (Pointer)ctup, state->size_of_centroid_tuple);
           pairingheap_add(queue, &item->ph_node);
         }
       }
@@ -231,12 +190,14 @@ SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
     if (!pairingheap_is_empty(queue)) {
       item = (CentroidSearchItem*) pairingheap_remove_first(queue);
       items[i] = *item;
+      pfree(item->ctup);
       pfree(item);
     }
   }
   for(;;) {
     if (!pairingheap_is_empty(queue)) {
       item = (CentroidSearchItem*) pairingheap_remove_first(queue);
+      pfree(item->ctup);
       pfree(item);
     }
     else

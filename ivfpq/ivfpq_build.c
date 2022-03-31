@@ -227,6 +227,48 @@ InvertedListPageAddItem(IvfpqState *state, Page page,
   Assert(((PageHeader) page)->pd_lower <= ((PageHeader) page)->pd_upper);
 }
 
+static void
+InvertedListFormEncodedTuple(IvfpqState *state, InvertedListRawTuple *tuple, InvertedListTuple *encoded_tuple, 
+    CentroidTuple *ctup) {
+    //TODO omp for encoding in different subvector space
+    float4 *residual;
+    float minDistance;
+    int i, j;
+    int dim = state->opts.dimension;
+    int parnum = state->opts.partition_num;
+    int pqnum = state->opts.pq_centroid_num; //pqnum <= 256
+    int subdim;
+    float4 *subvec, *pqvec;
+    uint8_t code;
+    float dis;
+
+    //there is a centroid vector and pq_centroids vectors in ctup.
+
+    residual = (float4 *)palloc0(sizeof(float4) * dim);
+    for (i = 0; i < dim; i++) 
+        residual[i] = tuple->vector[i] - ctup->vector[i];
+
+    if (dim % parnum != 0)
+      elog(ERROR, "Partition num is not a factor of dimension");
+    
+    subdim = dim / parnum;
+    //TODO omp 
+    for (i = 0; i < parnum; i++) {
+      subvec = tuple->vector + i * subdim;
+      pqvec = ctup->pq_vector + i * subdim * pqnum;
+      minDistance = FLT_MAX;
+      for (j = 0; j < pqnum; j++) {
+          dis = fvec_L2sqr(subvec, pqvec + j * subdim, subdim);
+          if (dis < minDistance) {
+            minDistance = dis;
+            code = (uint8_t)j;
+          }
+      }
+      encoded_tuple->encoded_vector[i] = code;
+    }
+    pfree(residual);
+}
+
 static bool
 AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
     InvertedListRawTuple *tuple) {
@@ -234,6 +276,7 @@ AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
   Page    page;
   Buffer  buffer, newBuffer;
   InvertedListTuple *encoded_tuple;
+  CentroidTuple *ctup;
 
   newBuffer = 0;
   minPos = 0;
@@ -248,8 +291,9 @@ AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
   encoded_tuple = (InvertedListTuple *)palloc0(state->size_of_invertedlist_tuple);
   encoded_tuple->heap_ptr = tuple->heap_ptr;
 
-  InvertedListFormEncodedTuple(&(buildState->ivf_state), tuple, encoded_tuple, 
-      &(buildState->centroids), minPos)
+  ctup = (CentroidTuple *)((char*)buildState->centroids.ctups + minPos * state->size_of_centroid_tuple);
+
+  InvertedListFormEncodedTuple(&(buildState->ivf_state), tuple, encoded_tuple, ctup);
 
   if (buildState->buf_list[minPos] == 0) {
     // first item in invertedlist
@@ -267,6 +311,7 @@ AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
     }
   }
   InvertedListPageAddItem(&(buildState->ivf_state), page, encoded_tuple); 
+  pfree(encoded_tuple);
   return true;
 }
 
@@ -290,8 +335,8 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
   Page                page, cpage;
   Buffer              buffer, newBuffer, cbuffer;
   CentroidSearchItem  items[1];
-  CentroidTuple       *ctup;
   GenericXLogState    *gxlogState;
+  InvertedListTuple *encoded_tuple;
 
   memset(items, 0, sizeof(CentroidSearchItem));
 
@@ -304,14 +349,20 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
     elog(WARNING, "insert item failed");
     return false;
   }
+
+  encoded_tuple = (InvertedListTuple *)palloc0(state->size_of_invertedlist_tuple);
+  encoded_tuple->heap_ptr = tuple->heap_ptr;
+
+  InvertedListFormEncodedTuple(state, tuple, encoded_tuple, items[0].ctup);
+
   if (items[0].head_ivl_blkno == 0) {
     // first item in invertedlist
-    page = CreateNewInvertedListPage(index, tuple, &buffer, true);
+    page = CreateNewInvertedListPage(index, encoded_tuple, &buffer, true);
     CENTROID_HEAD_BLKNO_UPDATE;
   } else {
     buffer = ReadBuffer(index, items[0].head_ivl_blkno);
     LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-    page = GetBufferPageForAddItem(index, state, tuple,
+    page = GetBufferPageForAddItem(index, state, encoded_tuple,
         buffer, &newBuffer, true);
     if (newBuffer != 0) {
       buffer = newBuffer;
@@ -319,7 +370,7 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
     }
   }
 
-  InvertedListPageAddItem(state, page, tuple); 
+  InvertedListPageAddItem(state, page, encoded_tuple); 
   FlushBufferPage(index, buffer, true);
   return true;
 }
