@@ -190,7 +190,6 @@ SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
     if (!pairingheap_is_empty(queue)) {
       item = (CentroidSearchItem*) pairingheap_remove_first(queue);
       items[i] = *item;
-      pfree(item->ctup);
       pfree(item);
     }
   }

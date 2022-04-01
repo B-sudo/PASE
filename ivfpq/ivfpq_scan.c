@@ -127,10 +127,34 @@ ivfpq_endscan(IndexScanDesc scan) {
   MemoryContextDelete(so->scan_ctx);
 }
 
+static float
+CalDistanceForEncoded_L2sqr(IvfpqMetaPageData *meta, float4 *residual, 
+uint8_t *encoded_vector, float4 *pq_vector) {
+    int partition_num = meta->opts.partition_num;
+    int pq_centroid_num = meta->opts.pq_centroid_num;
+    int dim = meta->opts.dimension;
+    int subdim;
+    int i;
+    float4 *generated_vector;
+
+    assert(dim % partition_num == 0);
+    subdim = dim / partition_num;
+
+    generated_vector = (float4 *)palloc0(sizeof(float4) * dim);
+    for (i = 0; i < partition_num; i++) {
+        assert(encoded_vector[i] < pq_centroid_num);
+        memcpy(generated_vector + i * subdim, 
+        pq_vector + i * subdim * pq_centroid_num + subdim * encoded_vector[i],
+        subdim * sizeof(float4));
+    }
+
+    return fvec_L2sqr(residual, generated_vector, dim); 
+}
+
 static void
 ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     IvfpqState *state, BlockNumber headBlkno,
-    float4 *queryVec, pairingheap *queue, pthread_mutex_t *mutex) {
+    float4 *queryVec, CentroidTuple *ctup, pairingheap *queue, pthread_mutex_t *mutex) {
   BlockNumber            blkno;
   Buffer                 buffer;
   Page                   page;
@@ -139,8 +163,17 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
   int                    i;
   float                  dis;
   InvertedListSearchItem *item;
+  float4                 *residual;
+  int                    dim;
 
   blkno = headBlkno;
+
+  dim = meta->opts.dimension;
+  residual = (float4 *)palloc0(sizeof(float4) * dim);
+
+  for (i = 0; i < dim; i++) 
+    residual[i] = queryVec[i] - ctup->vector[i];
+
   for (;;) {
     // to the end of inverted list
     if (blkno == 0) {
@@ -154,7 +187,9 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
 
     for (i = 0; i < opaque->maxoff; ++i) {
       itup = InvertedListPageGetTuple(state, page, i + 1); 
-      dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
+      //dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
+      dis = CalDistanceForEncoded_L2sqr(meta, residual, 
+      itup->encoded_vector, ctup->pq_vector);
       if (mutex) {
         pthread_mutex_lock(mutex);
       }
@@ -170,6 +205,8 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     UnlockReleaseBuffer(buffer); 
     blkno = opaque->next;
   }
+
+  pfree(residual);
 }
 
 // ivfpq_gettuple() -- Get the next tuple in the scan
@@ -262,7 +299,8 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
         }
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, so->queue, &mutex);
+            so->scan_pase->x, citems[i].ctup, so->queue, &mutex);
+        pfree(citems[i].ctup);
       }
       pthread_mutex_destroy(&mutex);
     } else {
@@ -276,7 +314,8 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
         }
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, so->queue, (pthread_mutex_t *)NULL);
+            so->scan_pase->x, citems[i].ctup, so->queue, (pthread_mutex_t *)NULL);
+        pfree(citems[i].ctup);
       }
     }
     if (!pairingheap_is_empty(so->queue)) {
