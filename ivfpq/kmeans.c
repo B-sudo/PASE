@@ -253,3 +253,15 @@ kmeans_impl(int dim, int k, int N, myvector inputs,
   return mean;
 }
 
+myvector
+residual_impl(int dim, int N, myvector inputs, myvector mean, int *r)
+{
+  myvector residual = (myvector) palloc(SIZEOF_V(dim) * N);
+  for (i = 0; i < N; i++) {
+    int klass=r[i];
+    for( j = 0; j < dim; j++){
+      residual[i * dim + j]=inputs[i * dim + j] - mean[klass * dim + j];
+    }
+  }
+  return residual;
+}

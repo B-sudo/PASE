@@ -41,6 +41,7 @@ typedef struct {
   float4 *values;
   float4 *mean;
   int    *k_pos;
+  float4 *residual_vec
 } ClusteringData;
 
 typedef ClusteringData *Clustering;
@@ -171,6 +172,11 @@ InitCentroids(IvfpqBuildState *buildState) {
           centroids->dim * sizeof(float4)); 
       ctup->head_ivl_blkno = 0;
       ctup->inverted_list_size = 0;
+    }
+    for( i = 0; i < buildState->clustering->count; ++i){
+        memcpy((void*)(ctup->pq_vector),
+          (void*)&(buildState->clustering->residual_vec[i * centroids->dim]),
+          centroids->dim * sizeof(float4)); 
     }
   }
   buildState->buf_list = (Buffer*) palloc0(sizeof(Buffer) * centroids->count);
@@ -674,7 +680,7 @@ ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo) {
     buildState.clustering = (Clustering) palloc(sizeof(ClusteringData));
     buildState.clustering->max_count = maxCount;
     buildState.clustering->values = (float4 *) palloc0(
-        buildState.clustering->max_count * opts->dimension * sizeof(float4));
+    buildState.clustering->max_count * opts->dimension * sizeof(float4));
     buildState.clustering->count = 0;
     // train clusters by kmeans
     MemoryContextSwitchTo(oldCtx);
@@ -688,6 +694,13 @@ ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo) {
         buildState.k, buildState.clustering->count,
         buildState.clustering->values, false, (float4*)NULL,
         buildState.clustering->k_pos);
+
+    buildState.clustering->residual_vec = residual_impl(
+      opts->dimension,buildState.clustering->count,
+        buildState.clustering->values,
+        buildState.clustering->mean,
+        buildState.clustering->k_pos);
+   
     if (!InitCentroids(&buildState))
       elog(ERROR, "index \"%s\" InitCentroids failed",
           RelationGetRelationName(index));
@@ -696,6 +709,7 @@ ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo) {
     pfree(buildState.clustering->values);
     pfree(buildState.clustering->k_pos);
     pfree(buildState.clustering->mean);
+    pfree(buildState.clustering->residual_vec);
     pfree(buildState.clustering);
     MemoryContextSwitchTo(oldCtx);
   } else {
