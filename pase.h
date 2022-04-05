@@ -28,6 +28,7 @@
 
 #include "hnsw/hnsw.h"
 #include "ivfflat/ivfflat.h"
+#include "ivfpq/ivfpq.h"
 #include "utils/vector_util.h"
 #include "type/pase_data.h"
 

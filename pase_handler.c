@@ -32,6 +32,7 @@ PG_MODULE_MAGIC;
 
 relopt_kind hnsw_relopt_kind;
 relopt_kind ivfflat_relopt_kind;
+relopt_kind ivfpq_relopt_kind;
 
 void
 _PG_init(void) {
@@ -76,6 +77,35 @@ _PG_init(void) {
                       "data whether base64 encoded",
                       0, 0, 1);
     add_string_reloption(ivfflat_relopt_kind, "clustering_params",
+                      "clustering parameters", "", NULL);
+
+    // ivfpq options
+    ivfpq_relopt_kind = add_reloption_kind();
+    add_int_reloption(ivfpq_relopt_kind, "clustering_type",
+                      "clustering type: 0 centroid_file, 1 inner clustering",
+                      0, 0, 1);
+    add_int_reloption(ivfpq_relopt_kind, "distance_type",
+                      "distance metric type:0 l2, 1 inner proudct, 2 cosine",
+                      0, 0, 2);
+    add_int_reloption(ivfpq_relopt_kind, "dimension",
+                      "vector dimension",
+                      1, 1, 1024);
+    add_int_reloption(ivfpq_relopt_kind, "open_omp",
+                      "whether open omp",
+                      0, 0, 1);
+    add_int_reloption(ivfpq_relopt_kind, "omp_thread_num",
+                      "omp thread number",
+                      0, 1, totalCoreNum);
+    add_int_reloption(ivfpq_relopt_kind, "base64_encoded",
+                      "data whether base64 encoded",
+                      0, 0, 1);
+    add_int_reloption(ivfpq_relopt_kind, "partition_num",
+                      "partitioning number of vector dimension",
+                      1, 1, 1024);
+    add_int_reloption(ivfpq_relopt_kind, "pq_centroid_num",
+                      "pq centroid number",
+                      1, 1, 256);
+    add_string_reloption(ivfpq_relopt_kind, "clustering_params",
                       "clustering parameters", "", NULL);
 
 }
@@ -194,3 +224,49 @@ pase_hnsw(PG_FUNCTION_ARGS) {
 
   PG_RETURN_POINTER(amroutine);
 }
+
+PG_FUNCTION_INFO_V1(pase_ivfpq);
+
+Datum
+pase_ivfpq(PG_FUNCTION_ARGS) {
+  IndexAmRoutine *amroutine = makeNode(IndexAmRoutine);
+
+  amroutine->amstrategies = 1;
+  amroutine->amsupport = 1;
+  amroutine->amcanorder = false;
+  amroutine->amcanorderbyop = true;
+  amroutine->amcanbackward = false;
+  amroutine->amcanunique = false;
+  amroutine->amcanmulticol = true;
+  amroutine->amoptionalkey = true;
+  amroutine->amsearcharray = false;
+  amroutine->amsearchnulls = false;
+  amroutine->amstorage = false;
+  amroutine->amclusterable = false;
+  amroutine->ampredlocks = false;
+  amroutine->amcanparallel = false;
+  amroutine->amkeytype = InvalidOid;
+
+  amroutine->ambuild = ivfpq_build;
+  amroutine->ambuildempty = ivfpq_buildempty;
+  amroutine->aminsert = ivfpq_insert;
+  amroutine->ambulkdelete = ivfpq_bulkdelete;
+  amroutine->amvacuumcleanup = ivfpq_vacuumcleanup;
+  amroutine->amcanreturn = NULL;
+  amroutine->amcostestimate = ivfpq_costestimate;
+  amroutine->amoptions = ivfpq_options;
+  amroutine->amproperty = NULL;
+  amroutine->ambeginscan = ivfpq_beginscan;
+  amroutine->amrescan = ivfpq_rescan;
+  amroutine->amgettuple = ivfpq_gettuple;
+  amroutine->amgetbitmap = ivfpq_getbitmap;
+  amroutine->amendscan = ivfpq_endscan;
+  amroutine->ammarkpos = NULL;
+  amroutine->amrestrpos = NULL;
+  amroutine->amestimateparallelscan = NULL;
+  amroutine->aminitparallelscan = NULL;
+  amroutine->amparallelrescan = NULL;
+
+  PG_RETURN_POINTER(amroutine);
+}
+

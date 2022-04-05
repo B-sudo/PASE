@@ -43,6 +43,8 @@ makeDefaultIvfpqOptions(void) {
   opts = (IvfpqOptions *) palloc0(sizeof(IvfpqOptions));
   opts->distance_type = 0;
   opts->dimension = 256;
+  opts->partition_num = 16;
+  opts->pq_centroid_num = 256;
   SET_VARSIZE(opts, sizeof(IvfpqOptions));
   return opts;
 }
@@ -338,6 +340,8 @@ ivfpq_options(Datum reloptions, bool validate) {
     {"open_omp", RELOPT_TYPE_INT, offsetof(IvfpqOptions, open_omp)},
     {"omp_thread_num", RELOPT_TYPE_INT, offsetof(IvfpqOptions, omp_thread_num)},
     {"base64_encoded", RELOPT_TYPE_INT, offsetof(IvfpqOptions, base64_encoded)},
+    {"partition_num", RELOPT_TYPE_INT, offsetof(IvfpqOptions, partition_num)},
+    {"pq_centroid_num", RELOPT_TYPE_INT, offsetof(IvfpqOptions, pq_centroid_num)},
     {"clustering_params", RELOPT_TYPE_STRING, offsetof(IvfpqOptions, clustering_params_offset)}
   };
 
