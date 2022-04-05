@@ -23,4 +23,10 @@ extern myvector
 kmeans_impl(int dim, int k, int N, myvector inputs,
         bool initial_mean_supplied, myvector initial_mean, int *r);
 
+extern myvector
+residual_impl(int dim, int N, myvector inputs, myvector mean, int *r int subdim);
+
+extern myvector
+pq_kmeans_impl(int dim, int N, myvector inputs, int partition_num, int pq_centroid_num);
+
 #endif  // PASE_IVFFLAT_KMEANS_H_

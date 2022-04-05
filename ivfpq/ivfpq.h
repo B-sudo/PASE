@@ -76,8 +76,8 @@ typedef struct IvfpqState {
 typedef struct CentroidTuple {
   BlockNumber     head_ivl_blkno;
   uint32          inverted_list_size;
+  //dim and partition_num * pq_centroid_num * (dimension / partiton_num)
   float4          vector[FLEXIBLE_ARRAY_MEMBER];
-  float4          pq_vector[FLEXIBLE_ARRAY_MEMBER]; //partition_num * pq_centroid_num * (dimension / partiton_num)
 } CentroidTuple;
 
 // Tuple for inverted list

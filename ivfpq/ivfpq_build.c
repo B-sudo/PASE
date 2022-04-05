@@ -42,6 +42,7 @@ typedef struct {
   float4 *mean;
   int    *k_pos;
   float4 *residual_vec
+  float4 *pq_mean;
 } ClusteringData;
 
 typedef ClusteringData *Clustering;
@@ -172,11 +173,9 @@ InitCentroids(IvfpqBuildState *buildState) {
           centroids->dim * sizeof(float4)); 
       ctup->head_ivl_blkno = 0;
       ctup->inverted_list_size = 0;
-    }
-    for( i = 0; i < buildState->clustering->count; ++i){
-        memcpy((void*)(ctup->pq_vector),
-          (void*)&(buildState->clustering->residual_vec[i * centroids->dim]),
-          centroids->dim * sizeof(float4)); 
+      memcpy((char *)ctup->vector + centroids->dim * sizeof(float4),
+        (void*)buildState->clustering->pq_mean,
+        centroids->dim * sizeof(float4) * opts->pq_centroid_num);
     }
   }
   buildState->buf_list = (Buffer*) palloc0(sizeof(Buffer) * centroids->count);
@@ -261,7 +260,7 @@ InvertedListFormEncodedTuple(IvfpqState *state, InvertedListRawTuple *tuple, Inv
     //TODO omp 
     for (i = 0; i < parnum; i++) {
       subvec = tuple->vector + i * subdim;
-      pqvec = ctup->pq_vector + i * subdim * pqnum;
+      pqvec = ctup->vector + dim + i * subdim * pqnum;
       minDistance = FLT_MAX;
       for (j = 0; j < pqnum; j++) {
           dis = fvec_L2sqr(subvec, pqvec + j * subdim, subdim);
@@ -699,17 +698,28 @@ ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo) {
       opts->dimension,buildState.clustering->count,
         buildState.clustering->values,
         buildState.clustering->mean,
-        buildState.clustering->k_pos);
-   
+        buildState.clustering->k_pos,
+        opts->dimension / opts->partition_num);
+
+    pfree(buildState.clustering->values);
+
+    elog(NOTICE, "begin inner pq kmeans clustering");
+    buildState.clustering->pq_mean = pq_kmeans_impl(
+      opts->dimension,
+      buildState.clustering->count,
+      buildState.clustering->residual_vec,
+      opts->partition_num,
+      opts->pq_centroid_num
+    );
+
     if (!InitCentroids(&buildState))
       elog(ERROR, "index \"%s\" InitCentroids failed",
           RelationGetRelationName(index));
-
     
-    pfree(buildState.clustering->values);
     pfree(buildState.clustering->k_pos);
     pfree(buildState.clustering->mean);
     pfree(buildState.clustering->residual_vec);
+    pfree(buildState.clustering->pq_mean);
     pfree(buildState.clustering);
     MemoryContextSwitchTo(oldCtx);
   } else {

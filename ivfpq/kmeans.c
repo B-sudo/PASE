@@ -254,14 +254,34 @@ kmeans_impl(int dim, int k, int N, myvector inputs,
 }
 
 myvector
-residual_impl(int dim, int N, myvector inputs, myvector mean, int *r)
+residual_impl(int dim, int N, myvector inputs, myvector mean, int *r, int subdim)
 {
-  myvector residual = (myvector) palloc(SIZEOF_V(dim) * N);
+  int i, j;
+  myvector residual = (myvector)palloc(SIZEOF_V(dim) * N);
   for (i = 0; i < N; i++) {
     int klass=r[i];
-    for( j = 0; j < dim; j++){
-      residual[i * dim + j]=inputs[i * dim + j] - mean[klass * dim + j];
+    for(j = 0; j < dim; j++){
+      //reschdual the positions of sub vectors for pq cal;
+      residual[(j / subdim) * subdim * N + i * subdim + (j % subdim)] = inputs[i * dim + j] - mean[klass * dim + j];
     }
   }
   return residual;
+}
+
+myvector
+pq_kmeans_impl(int dim, int N, myvector inputs, int partition_num, int pq_centroid_num)
+{
+  int i;
+  int *k_pos = (int *)palloc0(N * sizeof(int));
+  myvector pq_mean = (myvector)palloc(SIZEOF_V(dim) * pq_centroid_num);
+  myvector pq_mean_hook, input_hook;
+  //TODO omp
+  for (i = 0; i < partition_num; i++) {
+    pq_mean_hook = pq_mean + i * (dim / partition_num) * pq_centroid_num;
+    input_hook = inputs + i * (dim / partition_num) * N;
+
+    initialize_mean(input_hook, dim / partition_num, N, pq_centroid_num, pq_mean_hook, r);
+    kmeans_debug(pq_mean_hook, dim / partition_num, pq_centroid_num);
+    calc_kmeans(input_hook, dim / partition_num, N, pq_centroid_num, pq_mean_hook, r);
+  }
 }

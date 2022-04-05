@@ -189,7 +189,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
       itup = InvertedListPageGetTuple(state, page, i + 1); 
       //dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
       dis = CalDistanceForEncoded_L2sqr(meta, residual, 
-      itup->encoded_vector, ctup->pq_vector);
+      itup->encoded_vector, ctup->vector + dim);
       if (mutex) {
         pthread_mutex_lock(mutex);
       }
