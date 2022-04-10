@@ -92,11 +92,11 @@ InitIvfpqState(IvfpqState *state, Relation index) {
 }
 
 float
-SearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
-    Centroids centroids, int *minPos) {
+PqSearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
+    PqCentroids centroids, int *minPos) {
   // TODO(yangwen.yw): omp for
   float minDistance;
-  CentroidTuple *ctup;
+  PqCentroidTuple *ctup;
   int i;
   float dis;
 
@@ -105,7 +105,7 @@ SearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
   for (i = 0; i < centroids->count; ++i) {
     // TODO(yangwen.yw): support other metric type
     if (state->opts.distance_type == 0) {
-      ctup = (CentroidTuple *)((char*)centroids->ctups + i * state->size_of_centroid_tuple);
+      ctup = (PqCentroidTuple *)((char*)centroids->ctups + i * state->size_of_centroid_tuple);
       dis = fvec_L2sqr(tuple->vector, ctup->vector,
           centroids->dim);
       if (dis < minDistance) {
@@ -118,10 +118,10 @@ SearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
 }
 
 int
-PairingHeapCentroidCompare(const pairingheap_node *a,
+PqPairingHeapCentroidCompare(const pairingheap_node *a,
     const pairingheap_node *b, void *arg) {
-  const CentroidSearchItem *ca = (const CentroidSearchItem *)a;
-  const CentroidSearchItem *cb = (const CentroidSearchItem *)b;
+  const PqCentroidSearchItem *ca = (const PqCentroidSearchItem *)a;
+  const PqCentroidSearchItem *cb = (const PqCentroidSearchItem *)b;
   bool *reverse = (bool*) arg;
   if (ca->distance > cb->distance) {
     if (*reverse)
@@ -140,23 +140,23 @@ PairingHeapCentroidCompare(const pairingheap_node *a,
 }
 
 void
-SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
+PqSearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
     IvfpqMetaPageData *meta, float4 *tuple_vector,
-    int count, bool reverse, CentroidSearchItem *items,
+    int count, bool reverse, PqCentroidSearchItem *items,
     bool isScan) {
   // TODO(yangwen.yw): omp for
   BlockNumber cblkno;
   Buffer cbuffer;
   Page cpage;
-  CentroidTuple *ctup;
+  PqCentroidTuple *ctup;
   BufferAccessStrategy bas;
   pairingheap *queue;
-  CentroidSearchItem *item;
+  PqCentroidSearchItem *item;
   int i;
   bas = GetAccessStrategy(BAS_BULKREAD);
 
   cblkno = meta->centroid_head_blkno;
-  queue = pairingheap_allocate(PairingHeapCentroidCompare, &reverse);
+  queue = pairingheap_allocate(PqPairingHeapCentroidCompare, &reverse);
   for (; cblkno < meta->centroid_head_blkno + meta->centroid_page_count; ++cblkno) {
     cbuffer = ReadBufferExtended(index, MAIN_FORKNUM, cblkno,
         RBM_NORMAL, bas);
@@ -173,13 +173,13 @@ SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
         if (state->opts.distance_type == 0) {
           float dis = fvec_L2sqr(tuple_vector, ctup->vector,
               meta->opts.dimension);
-          item = (CentroidSearchItem *) palloc0(
-              sizeof(CentroidSearchItem));
+          item = (PqCentroidSearchItem *) palloc0(
+              sizeof(PqCentroidSearchItem));
           item->cblkno = cblkno;
           item->offset = offset;
           item->head_ivl_blkno = ctup->head_ivl_blkno;
           item->distance = dis;
-          item->ctup = (CentroidTuple *)palloc0(state->size_of_centroid_tuple);
+          item->ctup = (PqCentroidTuple *)palloc0(state->size_of_centroid_tuple);
           memcpy((Pointer)item->ctup, (Pointer)ctup, state->size_of_centroid_tuple);
           pairingheap_add(queue, &item->ph_node);
         }
@@ -190,14 +190,14 @@ SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
 
   for (i = 0; i < count; ++i) {
     if (!pairingheap_is_empty(queue)) {
-      item = (CentroidSearchItem*) pairingheap_remove_first(queue);
+      item = (PqCentroidSearchItem*) pairingheap_remove_first(queue);
       items[i] = *item;
       pfree(item);
     }
   }
   for(;;) {
     if (!pairingheap_is_empty(queue)) {
-      item = (CentroidSearchItem*) pairingheap_remove_first(queue);
+      item = (PqCentroidSearchItem*) pairingheap_remove_first(queue);
       pfree(item->ctup);
       pfree(item);
     }
@@ -208,7 +208,7 @@ SearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
   FreeAccessStrategy(bas);
 }
 
-void FlushBufferPage(Relation index, Buffer buffer, bool needUnLock) {
+void PqFlushBufferPage(Relation index, Buffer buffer, bool needUnLock) {
   GenericXLogState *state;
 
   if (!needUnLock)

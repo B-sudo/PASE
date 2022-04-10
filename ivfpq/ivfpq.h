@@ -73,20 +73,20 @@ typedef struct IvfpqState {
 } IvfpqState;
 
 // Tuple for centroid
-typedef struct CentroidTuple {
+typedef struct PqCentroidTuple {
   BlockNumber     head_ivl_blkno;
   uint32          inverted_list_size;
   //dim and partition_num * pq_centroid_num * (dimension / partiton_num)
   float4          vector[FLEXIBLE_ARRAY_MEMBER];
-} CentroidTuple;
+} PqCentroidTuple;
 
 // Tuple for inverted list
-typedef struct InvertedListTuple {
+typedef struct PqInvertedListTuple {
   ItemPointerData heap_ptr;
   uint8           is_deleted;
   /*256 PG centroids at most*/
   uint8_t         encoded_vector[FLEXIBLE_ARRAY_MEMBER];
-} InvertedListTuple;
+} PqInvertedListTuple;
 
 // Tuple for inverted list
 typedef struct InvertedListRawTuple {
@@ -96,30 +96,30 @@ typedef struct InvertedListRawTuple {
 } InvertedListRawTuple;
 
 // centroid data
-typedef struct CentroidsData {
+typedef struct PqCentroidsData {
   int    dim;
   int    count;
   int    partition_num;             
   int    pq_centroid_num; 
-  CentroidTuple *ctups;
-} CentroidsData;
+  PqCentroidTuple *ctups;
+} PqCentroidsData;
 
-typedef CentroidsData *Centroids;
+typedef PqCentroidsData *PqCentroids;
 
-typedef struct CentroidSearchItem {
+typedef struct PqCentroidSearchItem {
   pairingheap_node ph_node;
   BlockNumber cblkno;
   OffsetNumber offset;
   BlockNumber head_ivl_blkno;
-  CentroidTuple *ctup;   //ivfflat does not need centroid vectors in searchitem, but ivfpq need.
+  PqCentroidTuple *ctup;   //ivfflat does not need centroid vectors in searchitem, but ivfpq need.
   float distance;
-} CentroidSearchItem;
+} PqCentroidSearchItem;
 
-typedef struct InvertedListSearchItem {
+typedef struct PqInvertedListSearchItem {
   pairingheap_node ph_node;
   ItemPointerData heap_ptr;
   float distance;
-} InvertedListSearchItem;
+} PqInvertedListSearchItem;
 
 // Opaque data structure for ivfpq index scan
 typedef struct IvfpqScanOpaqueData {
@@ -156,21 +156,21 @@ typedef IvfpqScanOpaqueData *IvfpqScanOpaque;
   (IvfpqPageGetOpaque(_page)->flags |= IVFPQ_DELETED)
 #define IvfpqPageSetNonDeleted(_page) \
   (IvfpqPageGetOpaque(_page)->flags &= ~IVFPQ_DELETED)
-#define CentroidPageGetData(_page)		((CentroidTuple *)PageGetContents(_page))
+#define CentroidPageGetData(_page)		((PqCentroidTuple *)PageGetContents(_page))
 #define CentroidPageGetTuple(_state, _page, _offset) \
-  ((CentroidTuple *)(PageGetContents(_page) \
+  ((PqCentroidTuple *)(PageGetContents(_page) \
     + (_state)->size_of_centroid_tuple * ((_offset) - 1)))
 #define CentoridPageGetNextTuple(_state, _tuple) \
-  ((CentroidTuple *)((Pointer)(_tuple) + (_state)->size_of_centroid_tuple))
+  ((PqCentroidTuple *)((Pointer)(_tuple) + (_state)->size_of_centroid_tuple))
 #define CentroidTuplesGetTuple(_buildState, _offset) \
-  ((CentroidTuple *)((char*)_buildState->centroids.ctups + \
+  ((PqCentroidTuple *)((char*)_buildState->centroids.ctups + \
     _offset * (_buildState->ivf_state.size_of_centroid_tuple)))
-#define InvertedListPageGetData(_page)	((InvertedListTuple *)PageGetContents(_page))
+#define InvertedListPageGetData(_page)	((PqInvertedListTuple *)PageGetContents(_page))
 #define InvertedListPageGetTuple(_state, _page, _offset) \
-  ((InvertedListTuple *)(PageGetContents(_page) \
+  ((PqInvertedListTuple *)(PageGetContents(_page) \
     + (_state)->size_of_invertedlist_tuple * ((_offset) - 1)))
 #define InvertedListPageGetNextTuple(_state, _tuple) \
-  ((InvertedListTuple *)((Pointer)(_tuple) + (_state)->size_of_invertedlist_tuple))
+  ((PqInvertedListTuple *)((Pointer)(_tuple) + (_state)->size_of_invertedlist_tuple))
 #define IvfpqPageGetMeta(_page) ((IvfpqMetaPageData *) PageGetContents(_page))
 
 // Preserved page numbers
@@ -193,30 +193,30 @@ typedef IvfpqScanOpaqueData *IvfpqScanOpaque;
    - IvfpqPageGetMaxOffset(_page) * (_state)->size_of_invertedlist_tuple \
    - MAXALIGN(sizeof(IvfpqPageOpaqueData)))
 
-#define CENTROIDTUPLEHDRSZ offsetof(CentroidTuple, vector)
-#define INVERTEDLISTTUPLEHDRSZ offsetof(InvertedListTuple, encoded_vector)
+#define CENTROIDTUPLEHDRSZ offsetof(PqCentroidTuple, vector)
+#define INVERTEDLISTTUPLEHDRSZ offsetof(PqInvertedListTuple, encoded_vector)
 #define INVERTEDLISTRAWTUPLEHDRSZ offsetof(InvertedListRawTuple, vector)
 
 ////////////////////////////////////////////////////////////////////////////////
 // ivfpq_utils.c
-extern void _PG_init(void);
+//extern void _PG_init(void);
 extern void InitIvfpqState(IvfpqState *state, Relation index);
 extern void IvfpqFillMetapage(Relation index, Page metaPage);
 extern void IvfpqInitMetapage(Relation index);
 extern void IvfpqInitPage(Page page, uint16 flags);
 extern Buffer IvfpqNewBuffer(Relation index, bool needLock);
 extern bool IvfpqPageAddItem(IvfpqState *state, Page page,
-    InvertedListTuple *tuple);
-extern void FlushBufferPage(Relation index, Buffer buffer, bool needUnLock);
+    PqInvertedListTuple *tuple);
+extern void PqFlushBufferPage(Relation index, Buffer buffer, bool needUnLock);
 extern bytea *ivfpq_options(Datum reloptions, bool validate);
-extern float SearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
-    Centroids centroids, int *minPos);
-extern int PairingHeapCentroidCompare(const pairingheap_node *a,
+extern float PqSearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
+    PqCentroids centroids, int *minPos);
+extern int PqPairingHeapCentroidCompare(const pairingheap_node *a,
     const pairingheap_node *b, void *arg);
-extern void SearchKNNInvertedListFromCentroidPages(
+extern void PqSearchKNNInvertedListFromCentroidPages(
     Relation index, IvfpqState *state,
     IvfpqMetaPageData *meta, float4 *tuple_vector,
-    int count, bool reverse, CentroidSearchItem *items, bool isScan);
+    int count, bool reverse, PqCentroidSearchItem *items, bool isScan);
 
 // ivfpq_build.c
 extern IndexBuildResult *ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo);

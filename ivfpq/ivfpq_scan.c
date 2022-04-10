@@ -32,8 +32,8 @@ static const bool item_reverse = false;
 static int
 PairingHeapItemCompare(const pairingheap_node *a, const pairingheap_node *b,
     void *arg) {
-  const InvertedListSearchItem *ia = (const InvertedListSearchItem *)a;
-  const InvertedListSearchItem *ib = (const InvertedListSearchItem *)b;
+  const PqInvertedListSearchItem *ia = (const PqInvertedListSearchItem *)a;
+  const PqInvertedListSearchItem *ib = (const PqInvertedListSearchItem *)b;
   bool *reverse = (bool*) arg;
   if (ia->distance > ib->distance) {
     if (*reverse) {
@@ -92,14 +92,14 @@ ivfpq_rescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
     ScanKey orderbys, int norderbys) {
   MemoryContext          oldCtx;
   IvfpqScanOpaque      so;
-  InvertedListSearchItem *item;
+  PqInvertedListSearchItem *item;
 
   so = (IvfpqScanOpaque) scan->opaque;
   oldCtx = MemoryContextSwitchTo(so->scan_ctx);
 
   if (so->queue != NULL) {
     if (!pairingheap_is_empty(so->queue)) {
-      item = (InvertedListSearchItem *) pairingheap_remove_first(so->queue);
+      item = (PqInvertedListSearchItem *) pairingheap_remove_first(so->queue);
       pfree(item);
     }
     pairingheap_free(so->queue);
@@ -154,15 +154,15 @@ uint8_t *encoded_vector, float4 *pq_vector) {
 static void
 ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     IvfpqState *state, BlockNumber headBlkno,
-    float4 *queryVec, CentroidTuple *ctup, pairingheap *queue, pthread_mutex_t *mutex) {
+    float4 *queryVec, PqCentroidTuple *ctup, pairingheap *queue, pthread_mutex_t *mutex) {
   BlockNumber            blkno;
   Buffer                 buffer;
   Page                   page;
   IvfpqPageOpaque      opaque;
-  InvertedListTuple      *itup;
+  PqInvertedListTuple      *itup;
   int                    i;
   float                  dis;
-  InvertedListSearchItem *item;
+  PqInvertedListSearchItem *item;
   float4                 *residual;
   int                    dim;
 
@@ -193,8 +193,8 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
       if (mutex) {
         pthread_mutex_lock(mutex);
       }
-      item = (InvertedListSearchItem *) palloc0(
-          sizeof(InvertedListSearchItem));
+      item = (PqInvertedListSearchItem *) palloc0(
+          sizeof(PqInvertedListSearchItem));
       item->heap_ptr = itup->heap_ptr;
       item->distance = dis;
       pairingheap_add(queue, &item->ph_node);
@@ -219,8 +219,8 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
   Buffer		         metaBuffer;
   uint32                 scanRatio;
   uint32                 scanCentroidNum;
-  InvertedListSearchItem *item;
-  CentroidSearchItem     *citems;
+  PqInvertedListSearchItem *item;
+  PqCentroidSearchItem     *citems;
   int                    i;
 
   if (dir != ForwardScanDirection) {
@@ -278,11 +278,11 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
     if (scanCentroidNum == 0) {
       scanCentroidNum = 1;
     }
-    citems = (CentroidSearchItem*) palloc0(sizeof(CentroidSearchItem) * scanCentroidNum);
+    citems = (PqCentroidSearchItem*) palloc0(sizeof(PqCentroidSearchItem) * scanCentroidNum);
 
     scan->xs_recheck = false;
     scan->xs_recheckorderby = false;
-    SearchKNNInvertedListFromCentroidPages(scan->indexRelation,
+    PqSearchKNNInvertedListFromCentroidPages(scan->indexRelation,
         &so->state, meta, so->scan_pase->x, scanCentroidNum,
         reverse, citems, true);
     if (meta->opts.open_omp) {
@@ -319,7 +319,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
       }
     }
     if (!pairingheap_is_empty(so->queue)) {
-      item = (InvertedListSearchItem*) pairingheap_remove_first(
+      item = (PqInvertedListSearchItem*) pairingheap_remove_first(
           so->queue);
       scan->xs_ctup.t_self = item->heap_ptr;
       if (scan->numberOfOrderBys > 0) {
@@ -334,7 +334,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
   }
   else {
     if (!pairingheap_is_empty(so->queue)) {
-      item = (InvertedListSearchItem*) pairingheap_remove_first(
+      item = (PqInvertedListSearchItem*) pairingheap_remove_first(
           so->queue);
       scan->xs_ctup.t_self = item->heap_ptr;
       if (scan->numberOfOrderBys > 0) {

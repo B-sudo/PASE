@@ -41,8 +41,8 @@ ivfpq_bulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
   Buffer		        metaBuffer, cbuffer, ibuffer;
   Page		        cpage, ipage;
   IvfpqMetaPageData *meta;
-  CentroidTuple       *ctup;
-  InvertedListTuple   *itup;
+  PqCentroidTuple       *ctup;
+  PqInvertedListTuple   *itup;
   GenericXLogState    *gxlogState;
   IvfpqPageOpaque   iopaque;
   OffsetNumber ioffset, imaxOffset;
@@ -120,7 +120,7 @@ ivfpq_vacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats) {
   Buffer		 metaBuffer, cbuffer, ibuffer;
   Page		 cpage, ipage;
   IvfpqMetaPageData *meta;
-  CentroidTuple *ctup;
+  PqCentroidTuple *ctup;
   IvfpqPageOpaque opaque;
 
   if (info->analyze_only)

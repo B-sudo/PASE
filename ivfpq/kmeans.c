@@ -236,7 +236,7 @@ calc_kmeans(myvector inputs, int dim, int N, int k, myvector mean, int *r) {
 }
 
 myvector
-kmeans_impl(int dim, int k, int N, myvector inputs,
+basic_kmeans_impl(int dim, int k, int N, myvector inputs,
     bool initial_mean_supplied, myvector initial_mean, int *r) {
   myvector	mean;
 
@@ -280,8 +280,10 @@ pq_kmeans_impl(int dim, int N, myvector inputs, int partition_num, int pq_centro
     pq_mean_hook = pq_mean + i * (dim / partition_num) * pq_centroid_num;
     input_hook = inputs + i * (dim / partition_num) * N;
 
-    initialize_mean(input_hook, dim / partition_num, N, pq_centroid_num, pq_mean_hook, r);
+    initialize_mean(input_hook, dim / partition_num, N, pq_centroid_num, pq_mean_hook, k_pos);
     kmeans_debug(pq_mean_hook, dim / partition_num, pq_centroid_num);
-    calc_kmeans(input_hook, dim / partition_num, N, pq_centroid_num, pq_mean_hook, r);
+    calc_kmeans(input_hook, dim / partition_num, N, pq_centroid_num, pq_mean_hook, k_pos);
   }
+  pfree(k_pos);
+  return pq_mean;
 }

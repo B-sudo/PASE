@@ -29,6 +29,7 @@
 #include "utils/varlena.h"
 #include "access/stratnum.h"
 #include "common/base64.h"
+#include <float.h>
 
 #include "utils/string_util.h"
 #include "ivfpq.h"
@@ -41,7 +42,7 @@ typedef struct {
   float4 *values;
   float4 *mean;
   int    *k_pos;
-  float4 *residual_vec
+  float4 *residual_vec;
   float4 *pq_mean;
 } ClusteringData;
 
@@ -54,7 +55,7 @@ typedef struct {
   int64          ind_tuples;         // total number of tuples indexed
   MemoryContext  tmp_ctx;            // temporary memory context reset after each tuple
   MemoryContext  init_ctx;           // memory context for initializing
-  CentroidsData  centroids;          // centroids memory struct
+  PqCentroidsData  centroids;          // centroids memory struct
   Buffer         *buf_list;          // buffer list for inverted list 
   char           *centroid_path;     // centroid file path
   int    clustering_sample_ratio;    // clustering_sample_ratio: sample ratio for clustering, just for clustering type 1
@@ -65,12 +66,12 @@ typedef struct {
 //Initialize centroids data 
 static bool
 InitCentroids(IvfpqBuildState *buildState) {
-  Centroids       centroids;
+  PqCentroids       centroids;
   long            size;
   char            *str;
   List            *splits;
   ListCell        *cell;
-  CentroidTuple   *ctup;
+  PqCentroidTuple   *ctup;
   IvfpqOptions  *opts;
   FILE            *fp;
   int             loop, i, dim, count, vc;
@@ -131,7 +132,7 @@ InitCentroids(IvfpqBuildState *buildState) {
         centroids->count = count;
       } else if (2 == loop) {
         char *pos = (char*)split;
-        centroids->ctups = (CentroidTuple *) palloc0(
+        centroids->ctups = (PqCentroidTuple *) palloc0(
             buildState->ivf_state.size_of_centroid_tuple * centroids->count);
         i = 0;
         for (; i < centroids->count; ++i) {
@@ -164,7 +165,7 @@ InitCentroids(IvfpqBuildState *buildState) {
   } else {
     centroids->dim = opts->dimension;
     centroids->count = buildState->k;
-    centroids->ctups = (CentroidTuple *) palloc0(
+    centroids->ctups = (PqCentroidTuple *) palloc0(
         buildState->ivf_state.size_of_centroid_tuple * centroids->count);
     for (i = 0; i < centroids->count; ++i) {
       ctup = CentroidTuplesGetTuple(buildState, i);
@@ -183,7 +184,7 @@ InitCentroids(IvfpqBuildState *buildState) {
 }
 
 static Page
-CreateNewInvertedListPage(Relation index, InvertedListTuple *tuple,
+CreateNewInvertedListPage(Relation index, PqInvertedListTuple *tuple,
     Buffer *buffer, bool needLock) {
   Page page;
   *buffer = IvfpqNewBuffer(index, needLock);
@@ -195,7 +196,7 @@ CreateNewInvertedListPage(Relation index, InvertedListTuple *tuple,
 
 static Page
 GetBufferPageForAddItem(Relation index, IvfpqState *state,
-    InvertedListTuple *tuple, Buffer buffer,
+    PqInvertedListTuple *tuple, Buffer buffer,
     Buffer *newBuffer, bool needLock) {
   Page page, newPage;
   IvfpqPageOpaque opaque;
@@ -209,7 +210,7 @@ GetBufferPageForAddItem(Relation index, IvfpqState *state,
         newBuffer, needLock);
     opaque = IvfpqPageGetOpaque(newPage);
     opaque->next = BufferGetBlockNumber(buffer);
-    FlushBufferPage(index, buffer, needLock);
+    PqFlushBufferPage(index, buffer, needLock);
     page = newPage;
   }
   Assert(!PageIsNew(page) && !IvfpqPageIsDeleted(page));
@@ -218,7 +219,7 @@ GetBufferPageForAddItem(Relation index, IvfpqState *state,
 
 static void 
 InvertedListPageAddItem(IvfpqState *state, Page page,
-    InvertedListTuple *tuple) {
+    PqInvertedListTuple *tuple) {
   Pointer           ptr;
   IvfpqPageOpaque opaque;
   InvertedListRawTuple *itup;
@@ -233,8 +234,8 @@ InvertedListPageAddItem(IvfpqState *state, Page page,
 }
 
 static void
-InvertedListFormEncodedTuple(IvfpqState *state, InvertedListRawTuple *tuple, InvertedListTuple *encoded_tuple, 
-    CentroidTuple *ctup) {
+InvertedListFormEncodedTuple(IvfpqState *state, InvertedListRawTuple *tuple, PqInvertedListTuple *encoded_tuple, 
+    PqCentroidTuple *ctup) {
     //TODO omp for encoding in different subvector space
     float4 *residual;
     float minDistance;
@@ -280,23 +281,23 @@ AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
   int     minPos;
   Page    page;
   Buffer  buffer, newBuffer;
-  InvertedListTuple *encoded_tuple;
-  CentroidTuple *ctup;
+  PqInvertedListTuple *encoded_tuple;
+  PqCentroidTuple *ctup;
 
   newBuffer = 0;
   minPos = 0;
 
-  SearchNNFromCentroids(&(buildState->ivf_state), tuple,
+  PqSearchNNFromCentroids(&(buildState->ivf_state), tuple,
       &(buildState->centroids), &minPos);
   if (minPos >= buildState->centroids.count) {
     elog(WARNING, "min pos[%d] error", minPos);
     return false;
   }
 
-  encoded_tuple = (InvertedListTuple *)palloc0(state->size_of_invertedlist_tuple);
+  encoded_tuple = (PqInvertedListTuple *)palloc0(buildState->ivf_state.size_of_invertedlist_tuple);
   encoded_tuple->heap_ptr = tuple->heap_ptr;
 
-  ctup = (CentroidTuple *)((char*)buildState->centroids.ctups + minPos * state->size_of_centroid_tuple);
+  ctup = (PqCentroidTuple *)((char*)buildState->centroids.ctups + minPos * buildState->ivf_state.size_of_centroid_tuple);
 
   InvertedListFormEncodedTuple(&(buildState->ivf_state), tuple, encoded_tuple, ctup);
 
@@ -339,23 +340,24 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
   bool                reverse;
   Page                page, cpage;
   Buffer              buffer, newBuffer, cbuffer;
-  CentroidSearchItem  items[1];
+  PqCentroidSearchItem  items[1];
+  PqCentroidTuple       *ctup;
   GenericXLogState    *gxlogState;
-  InvertedListTuple *encoded_tuple;
+  PqInvertedListTuple *encoded_tuple;
 
-  memset(items, 0, sizeof(CentroidSearchItem));
+  memset(items, 0, sizeof(PqCentroidSearchItem));
 
   newBuffer = 0;
   reverse = false;
 
-  SearchKNNInvertedListFromCentroidPages(index, state, meta, tuple->vector, 1,
+  PqSearchKNNInvertedListFromCentroidPages(index, state, meta, tuple->vector, 1,
       reverse, items, false);
   if (items[0].cblkno == 0) {
     elog(WARNING, "insert item failed");
     return false;
   }
 
-  encoded_tuple = (InvertedListTuple *)palloc0(state->size_of_invertedlist_tuple);
+  encoded_tuple = (PqInvertedListTuple *)palloc0(state->size_of_invertedlist_tuple);
   encoded_tuple->heap_ptr = tuple->heap_ptr;
 
   InvertedListFormEncodedTuple(state, tuple, encoded_tuple, items[0].ctup);
@@ -376,7 +378,7 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
   }
 
   InvertedListPageAddItem(state, page, encoded_tuple); 
-  FlushBufferPage(index, buffer, true);
+  PqFlushBufferPage(index, buffer, true);
   return true;
 }
 
@@ -445,11 +447,11 @@ InvertedListFormTuple(IvfpqState *state, ItemPointer iptr,
 }
 
   static void
-CentroidPageAddItem(IvfpqState *state, Page page, CentroidTuple *tuple)
+CentroidPageAddItem(IvfpqState *state, Page page, PqCentroidTuple *tuple)
 {
   Pointer           ptr;
   IvfpqPageOpaque opaque;
-  CentroidTuple     *ctup;
+  PqCentroidTuple     *ctup;
 
   opaque = IvfpqPageGetOpaque(page);
   ctup = CentroidPageGetTuple(state, page, opaque->maxoff + 1);
@@ -472,7 +474,7 @@ CreateNewCentroidPage(Relation index, Buffer *buffer) {
 
 static void
 BuildCentroidPages(Relation index, IvfpqBuildState *buildState) {
-  Centroids           centroids;
+  PqCentroids           centroids;
   Buffer              metaBuffer;
   Page                metaPage;
   Page                tmpPage;
@@ -507,7 +509,7 @@ BuildCentroidPages(Relation index, IvfpqBuildState *buildState) {
       newPage = CreateNewCentroidPage(index, &newBuf);
       opaque = IvfpqPageGetOpaque(tmpPage);
       opaque->next = BufferGetBlockNumber(newBuf);
-      FlushBufferPage(index, tmpBuf, true);
+      PqFlushBufferPage(index, tmpBuf, true);
       tmpPage = newPage;
       tmpBuf = newBuf;
       meta->centroid_page_count ++;
@@ -517,7 +519,7 @@ BuildCentroidPages(Relation index, IvfpqBuildState *buildState) {
   }
 
   // flush last buffer page
-  FlushBufferPage(index, tmpBuf, true);
+  PqFlushBufferPage(index, tmpBuf, true);
   meta->centroid_page_count ++;
   GenericXLogFinish(state);
   UnlockReleaseBuffer(metaBuffer);
@@ -689,7 +691,7 @@ ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo) {
     buildState.clustering->k_pos = (int *) palloc0(
         buildState.clustering->count * sizeof(int));
     elog(NOTICE, "begin inner kmeans clustering");
-    buildState.clustering->mean = kmeans_impl(opts->dimension,
+    buildState.clustering->mean = basic_kmeans_impl(opts->dimension,
         buildState.k, buildState.clustering->count,
         buildState.clustering->values, false, (float4*)NULL,
         buildState.clustering->k_pos);
@@ -747,7 +749,7 @@ ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo) {
       if (CentroidTuplesGetTuple((&buildState), i)->head_ivl_blkno == 0)
         CentroidTuplesGetTuple((&buildState), i)->head_ivl_blkno =
           BufferGetBlockNumber(buildState.buf_list[i]);
-      FlushBufferPage(index, buildState.buf_list[i], false);
+      PqFlushBufferPage(index, buildState.buf_list[i], false);
     }
   }
 
