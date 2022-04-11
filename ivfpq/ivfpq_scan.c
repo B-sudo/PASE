@@ -137,12 +137,12 @@ uint8_t *encoded_vector, float4 *pq_vector) {
     int i;
     float4 *generated_vector;
 
-    assert(dim % partition_num == 0);
+    Assert(dim % partition_num == 0);
     subdim = dim / partition_num;
 
     generated_vector = (float4 *)palloc0(sizeof(float4) * dim);
     for (i = 0; i < partition_num; i++) {
-        assert(encoded_vector[i] < pq_centroid_num);
+        Assert(encoded_vector[i] < pq_centroid_num);
         memcpy(generated_vector + i * subdim, 
         pq_vector + i * subdim * pq_centroid_num + subdim * encoded_vector[i],
         subdim * sizeof(float4));

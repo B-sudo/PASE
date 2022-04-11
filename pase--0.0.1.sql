@@ -99,6 +99,22 @@ CREATE OPERATOR CLASS pase_ivfflat_text_ops
 DEFAULT FOR TYPE text USING pase_ivfflat AS
   OPERATOR  1  <!> (text, pase) FOR ORDER BY float_ops;
 
+-- ivfpq index
+CREATE FUNCTION pase_ivfpq(internal)
+RETURNS index_am_handler
+AS 'MODULE_PATHNAME'
+LANGUAGE C;
+
+CREATE ACCESS METHOD pase_ivfpq TYPE INDEX HANDLER pase_ivfpq;
+
+CREATE OPERATOR CLASS pase_ivfpq_float_ops
+DEFAULT FOR TYPE float4[] USING pase_ivfpq AS
+  OPERATOR  1  <#> (float4[], pase) FOR ORDER BY float_ops;
+
+CREATE OPERATOR CLASS pase_ivfpq_text_ops
+DEFAULT FOR TYPE text USING pase_ivfpq AS
+  OPERATOR  1  <!> (text, pase) FOR ORDER BY float_ops;
+
 SET enable_seqscan=off;
 SET enable_indexscan=on;
 
