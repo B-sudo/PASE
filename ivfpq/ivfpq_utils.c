@@ -82,17 +82,17 @@ InitIvfpqState(IvfpqState *state, Relation index) {
   }
 
   memcpy(&state->opts, index->rd_amcache, sizeof(state->opts));
-  state->size_of_centroid_tuple = CENTROIDTUPLEHDRSZ +
+  state->size_of_centroid_tuple = PQCENTROIDTUPLEHDRSZ +
     sizeof(float4) * state->opts.dimension + 
     sizeof(float4) * state->opts.dimension * state->opts.pq_centroid_num;
-  state->size_of_invertedlist_tuple = INVERTEDLISTTUPLEHDRSZ +
+  state->size_of_invertedlist_tuple = PQINVERTEDLISTTUPLEHDRSZ +
     sizeof(uint8_t) * state->opts.partition_num;
-  state->size_of_invertedlist_rawtuple = INVERTEDLISTRAWTUPLEHDRSZ + 
+  state->size_of_invertedlist_rawtuple = PQINVERTEDLISTRAWTUPLEHDRSZ + 
     sizeof(float4) * state->opts.dimension;
 }
 
 float
-PqSearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
+PqSearchNNFromCentroids(IvfpqState *state, PqInvertedListRawTuple *tuple,
     PqCentroids centroids, int *minPos) {
   // TODO(yangwen.yw): omp for
   float minDistance;
@@ -166,7 +166,7 @@ PqSearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
       OffsetNumber offset,
                    maxOffset = IvfpqPageGetMaxOffset(cpage);
       for (offset = 1; offset <= maxOffset; ++offset) {
-        ctup = CentroidPageGetTuple(state, cpage, offset);
+        ctup = PqCentroidPageGetTuple(state, cpage, offset);
         if (isScan && ctup->head_ivl_blkno == 0)
           continue;
         // TODO(yangwen.yw): support other metric type

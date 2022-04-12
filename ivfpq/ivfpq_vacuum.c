@@ -66,7 +66,7 @@ ivfpq_bulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
       OffsetNumber offset,
                    maxOffset = IvfpqPageGetMaxOffset(cpage);
       for (offset = 1; offset <= maxOffset; ++offset) {
-        ctup = CentroidPageGetTuple(&state, cpage, offset);
+        ctup = PqCentroidPageGetTuple(&state, cpage, offset);
         if (ctup->head_ivl_blkno == 0)
           continue;
         iblkno = ctup->head_ivl_blkno;
@@ -87,7 +87,7 @@ ivfpq_bulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
           }
           imaxOffset = IvfpqPageGetMaxOffset(ipage);
           for (ioffset = 1; ioffset <= imaxOffset; ++ioffset) {
-            itup = InvertedListPageGetTuple(
+            itup = PqInvertedListPageGetTuple(
                 &state, ipage, ioffset);
             if (callback(&itup->heap_ptr, callback_state)) {
               itup->is_deleted = 1;
@@ -149,7 +149,7 @@ ivfpq_vacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats) {
       OffsetNumber offset,
                    maxOffset = IvfpqPageGetMaxOffset(cpage);
       for (offset = 1; offset <= maxOffset; ++offset) {
-        ctup = CentroidPageGetTuple(&state, cpage, offset);
+        ctup = PqCentroidPageGetTuple(&state, cpage, offset);
         if (ctup->head_ivl_blkno == 0)
           continue;
         iblkno = ctup->head_ivl_blkno;

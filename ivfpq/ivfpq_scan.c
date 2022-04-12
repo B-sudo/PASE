@@ -186,7 +186,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     opaque = IvfpqPageGetOpaque(page);
 
     for (i = 0; i < opaque->maxoff; ++i) {
-      itup = InvertedListPageGetTuple(state, page, i + 1); 
+      itup = PqInvertedListPageGetTuple(state, page, i + 1); 
       //dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
       dis = CalDistanceForEncoded_L2sqr(meta, residual, 
       itup->encoded_vector, ctup->vector + dim);

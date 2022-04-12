@@ -89,11 +89,11 @@ typedef struct PqInvertedListTuple {
 } PqInvertedListTuple;
 
 // Tuple for inverted list
-typedef struct InvertedListRawTuple {
+typedef struct PqInvertedListRawTuple {
   ItemPointerData heap_ptr;
   uint8           is_deleted;
   float4          vector[FLEXIBLE_ARRAY_MEMBER];
-} InvertedListRawTuple;
+} PqInvertedListRawTuple;
 
 // centroid data
 typedef struct PqCentroidsData {
@@ -156,20 +156,20 @@ typedef IvfpqScanOpaqueData *IvfpqScanOpaque;
   (IvfpqPageGetOpaque(_page)->flags |= IVFPQ_DELETED)
 #define IvfpqPageSetNonDeleted(_page) \
   (IvfpqPageGetOpaque(_page)->flags &= ~IVFPQ_DELETED)
-#define CentroidPageGetData(_page)		((PqCentroidTuple *)PageGetContents(_page))
-#define CentroidPageGetTuple(_state, _page, _offset) \
+#define PqCentroidPageGetData(_page)		((PqCentroidTuple *)PageGetContents(_page))
+#define PqCentroidPageGetTuple(_state, _page, _offset) \
   ((PqCentroidTuple *)(PageGetContents(_page) \
     + (_state)->size_of_centroid_tuple * ((_offset) - 1)))
-#define CentoridPageGetNextTuple(_state, _tuple) \
+#define PqCentoridPageGetNextTuple(_state, _tuple) \
   ((PqCentroidTuple *)((Pointer)(_tuple) + (_state)->size_of_centroid_tuple))
-#define CentroidTuplesGetTuple(_buildState, _offset) \
+#define PqCentroidTuplesGetTuple(_buildState, _offset) \
   ((PqCentroidTuple *)((char*)_buildState->centroids.ctups + \
     _offset * (_buildState->ivf_state.size_of_centroid_tuple)))
-#define InvertedListPageGetData(_page)	((PqInvertedListTuple *)PageGetContents(_page))
-#define InvertedListPageGetTuple(_state, _page, _offset) \
+#define PqInvertedListPageGetData(_page)	((PqInvertedListTuple *)PageGetContents(_page))
+#define PqInvertedListPageGetTuple(_state, _page, _offset) \
   ((PqInvertedListTuple *)(PageGetContents(_page) \
     + (_state)->size_of_invertedlist_tuple * ((_offset) - 1)))
-#define InvertedListPageGetNextTuple(_state, _tuple) \
+#define PqInvertedListPageGetNextTuple(_state, _tuple) \
   ((PqInvertedListTuple *)((Pointer)(_tuple) + (_state)->size_of_invertedlist_tuple))
 #define IvfpqPageGetMeta(_page) ((IvfpqMetaPageData *) PageGetContents(_page))
 
@@ -184,18 +184,18 @@ typedef IvfpqScanOpaqueData *IvfpqScanOpaque;
 // Magic number to distinguish ivfpq pages among anothers
 #define IVFPQ_MAGICK_NUMBER (0xDBAC0DEE)
 
-#define CentroidPageGetFreeSpace(_state, _page) \
+#define PqCentroidPageGetFreeSpace(_state, _page) \
   (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) \
    - IvfpqPageGetMaxOffset(_page) * (_state)->size_of_centroid_tuple \
    - MAXALIGN(sizeof(IvfpqPageOpaqueData)))
-#define InvertedListPageGetFreeSpace(_state, _page) \
+#define PqInvertedListPageGetFreeSpace(_state, _page) \
   (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) \
    - IvfpqPageGetMaxOffset(_page) * (_state)->size_of_invertedlist_tuple \
    - MAXALIGN(sizeof(IvfpqPageOpaqueData)))
 
-#define CENTROIDTUPLEHDRSZ offsetof(PqCentroidTuple, vector)
-#define INVERTEDLISTTUPLEHDRSZ offsetof(PqInvertedListTuple, encoded_vector)
-#define INVERTEDLISTRAWTUPLEHDRSZ offsetof(InvertedListRawTuple, vector)
+#define PQCENTROIDTUPLEHDRSZ offsetof(PqCentroidTuple, vector)
+#define PQINVERTEDLISTTUPLEHDRSZ offsetof(PqInvertedListTuple, encoded_vector)
+#define PQINVERTEDLISTRAWTUPLEHDRSZ offsetof(PqInvertedListRawTuple, vector)
 
 ////////////////////////////////////////////////////////////////////////////////
 // ivfpq_utils.c
@@ -209,7 +209,7 @@ extern bool IvfpqPageAddItem(IvfpqState *state, Page page,
     PqInvertedListTuple *tuple);
 extern void PqFlushBufferPage(Relation index, Buffer buffer, bool needUnLock);
 extern bytea *ivfpq_options(Datum reloptions, bool validate);
-extern float PqSearchNNFromCentroids(IvfpqState *state, InvertedListRawTuple *tuple,
+extern float PqSearchNNFromCentroids(IvfpqState *state, PqInvertedListRawTuple *tuple,
     PqCentroids centroids, int *minPos);
 extern int PqPairingHeapCentroidCompare(const pairingheap_node *a,
     const pairingheap_node *b, void *arg);
