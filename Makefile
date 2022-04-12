@@ -1,5 +1,5 @@
 EXTENSION = pase
-OBJS = $(patsubst %.c,%.o,$(wildcard type/*.c hnsw/*.c *.c ivfflat/*.c utils/*.c))
+OBJS = $(patsubst %.c,%.o,$(wildcard type/*.c hnsw/*.c *.c ivfflat/*.c ivfpq/*.c utils/*.c))
 
 MODULE_big = $(EXTENSION)
 PG_LDFLAGS = -fopenmp -msse4 -mpopcnt
