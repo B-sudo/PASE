@@ -129,7 +129,7 @@ ivfpq_endscan(IndexScanDesc scan) {
 
 static float
 CalDistanceForEncoded_L2sqr(IvfpqMetaPageData *meta, float4 *residual, 
-uint8_t *encoded_vector, float4 *pq_vector) {
+uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
     int partition_num = meta->opts.partition_num;
     int pq_centroid_num = meta->opts.pq_centroid_num;
     int dim = meta->opts.dimension;
@@ -143,8 +143,8 @@ uint8_t *encoded_vector, float4 *pq_vector) {
     generated_vector = (float4 *)palloc0(sizeof(float4) * dim);
     for (i = 0; i < partition_num; i++) {
         Assert(encoded_vector[i] < pq_centroid_num);
-        memcpy(generated_vector + i * subdim, 
-        pq_vector + i * subdim * pq_centroid_num + subdim * encoded_vector[i],
+        memcpy((void *)(generated_vector + i * subdim), 
+        (void *)(pqtups[i * pq_centroid_num + encoded_vector[i]].vector),
         subdim * sizeof(float4));
     }
 
@@ -165,11 +165,14 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
   PqInvertedListSearchItem *item;
   float4                 *residual;
   int                    dim;
+  PqSubvectorTuple       *pqtuples;
 
   blkno = headBlkno;
 
   dim = meta->opts.dimension;
   residual = (float4 *)palloc0(sizeof(float4) * dim);
+
+  pqtuples = PqGetSubvectorTuples(index, state, meta);
 
   for (i = 0; i < dim; i++) 
     residual[i] = queryVec[i] - ctup->vector[i];
@@ -189,7 +192,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
       itup = PqInvertedListPageGetTuple(state, page, i + 1); 
       //dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
       dis = CalDistanceForEncoded_L2sqr(meta, residual, 
-      itup->encoded_vector, ctup->vector + dim);
+      itup->encoded_vector, pqtuples);
       if (mutex) {
         pthread_mutex_lock(mutex);
       }

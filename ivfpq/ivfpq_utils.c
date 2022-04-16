@@ -83,8 +83,9 @@ InitIvfpqState(IvfpqState *state, Relation index) {
 
   memcpy(&state->opts, index->rd_amcache, sizeof(state->opts));
   state->size_of_centroid_tuple = PQCENTROIDTUPLEHDRSZ +
-    sizeof(float4) * state->opts.dimension + 
-    sizeof(float4) * state->opts.dimension * state->opts.pq_centroid_num;
+    sizeof(float4) * state->opts.dimension;
+  state->size_of_subvector_tuple = PQSUBVECTORTUPLEHDRSZ + 
+    sizeof(float4) * state->opts.dimension / state->opts.partition_num;
   state->size_of_invertedlist_tuple = PQINVERTEDLISTTUPLEHDRSZ +
     sizeof(uint8_t) * state->opts.partition_num;
   state->size_of_invertedlist_rawtuple = PQINVERTEDLISTRAWTUPLEHDRSZ + 
@@ -206,6 +207,41 @@ PqSearchKNNInvertedListFromCentroidPages(Relation index, IvfpqState *state,
   }
   pairingheap_free(queue);
   FreeAccessStrategy(bas);
+}
+
+PqSubvectorTuple *
+PqGetSubvectorTuples(Relation index, IvfpqState *state,
+  IvfpqMetaPageData *meta) {
+  BlockNumber pqblkno;
+  Buffer pqbuffer;
+  Page pqpage;
+  BufferAccessStrategy bas;
+  PqSubvectorTuple *pqtup;
+  PqSubvectorTuple *pqtups;
+  int i;
+  bas = GetAccessStrategy(BAS_BULKREAD);
+
+  pqtups = (PqSubvectorTuple *)palloc0(state->size_of_subvector_tuple * state->opts.partition_num * state->opts.pq_centroid_num);
+
+  pqblkno = meta->pq_centroid_head_blkno;
+  i = 0;
+  for (; pqblkno < meta->pq_centroid_head_blkno + meta->pq_centroid_page_count; ++pqblkno) {
+    pqbuffer = ReadBufferExtended(index, MAIN_FORKNUM, pqblkno,
+        RBM_NORMAL, bas);
+    LockBuffer(pqbuffer, BUFFER_LOCK_SHARE);
+    pqpage = BufferGetPage(pqbuffer); 
+    if (!PageIsNew(pqpage) && !IvfpqPageIsDeleted(pqpage)) {
+      OffsetNumber offset,
+                   maxOffset = IvfpqPageGetMaxOffset(pqpage);
+      for (offset = 1; offset <= maxOffset; ++offset) {
+        pqtup = PqSubvectorPageGetTuple(state, pqpage, offset);
+        memcpy((Pointer)&(pqtups[i++]),(Pointer)pqtup, state->size_of_subvector_tuple);
+      }
+    }
+  }
+  Assert(i == state->opts.partition_num * state->opts.pq_centroid_num);
+
+  return pqtups;
 }
 
 void PqFlushBufferPage(Relation index, Buffer buffer, bool needUnLock) {

@@ -45,13 +45,14 @@ typedef struct IvfpqOptions {
   int    clustering_type;           // clustering type:0 centroid_file, 1 inner clustering
   int	 distance_type;	            // distance metric type:0 l2, 1 inner proudct, 2 cosine
   int    dimension;                 // vector dimension
+
+  int    partition_num;             //num of subvectors from a partitioned vector. Should be a factor of dimension.
+  int    pq_centroid_num;          //num of refined centroids in each subspace, no more than 256
+
   int    open_omp;                  // whether open omp, 0:close, 1:open
   int    omp_thread_num;            // omp thread number
   int    base64_encoded;            // data whether base64 encoded
   int	 clustering_params_offset;  // clustering parameters offset
-
-  int    partition_num;             //num of subvectors from a partitioned vector. Should be a factor of dimension.
-  int    pq_centroid_num;          //num of refined centroids in each subspace, no more than 256
 } IvfpqOptions;
 
 // Metadata of ivfpq index
@@ -61,6 +62,8 @@ typedef struct IvfpqMetaPageData
   uint32      centroid_num;
   BlockNumber centroid_head_blkno;
   BlockNumber centroid_page_count;
+  BlockNumber pq_centroid_head_blkno;
+  BlockNumber pq_centroid_page_count;
   IvfpqOptions opts;
 } IvfpqMetaPageData;
 
@@ -68,6 +71,7 @@ typedef struct IvfpqState {
   IvfpqOptions opts;			// copy of options on index's metapage
   int32          nColumns;
   Size           size_of_centroid_tuple;
+  Size           size_of_subvector_tuple;
   Size           size_of_invertedlist_tuple;
   Size           size_of_invertedlist_rawtuple;
 } IvfpqState;
@@ -76,9 +80,12 @@ typedef struct IvfpqState {
 typedef struct PqCentroidTuple {
   BlockNumber     head_ivl_blkno;
   uint32          inverted_list_size;
-  //dim and partition_num * pq_centroid_num * (dimension / partiton_num)
   float4          vector[FLEXIBLE_ARRAY_MEMBER];
 } PqCentroidTuple;
+
+typedef struct PqSubvectorTuple {
+  float4          vector[FLEXIBLE_ARRAY_MEMBER];
+} PqSubvectorTuple;
 
 // Tuple for inverted list
 typedef struct PqInvertedListTuple {
@@ -102,6 +109,7 @@ typedef struct PqCentroidsData {
   int    partition_num;             
   int    pq_centroid_num; 
   PqCentroidTuple *ctups;
+  PqSubvectorTuple *pqtups;
 } PqCentroidsData;
 
 typedef PqCentroidsData *PqCentroids;
@@ -160,11 +168,17 @@ typedef IvfpqScanOpaqueData *IvfpqScanOpaque;
 #define PqCentroidPageGetTuple(_state, _page, _offset) \
   ((PqCentroidTuple *)(PageGetContents(_page) \
     + (_state)->size_of_centroid_tuple * ((_offset) - 1)))
+#define PqSubvectorPageGetTuple(_state, _page, _offset) \
+  ((PqSubvectorTuple *)(PageGetContents(_page) \
+    + (_state)->size_of_subvector_tuple * ((_offset) - 1)))
 #define PqCentoridPageGetNextTuple(_state, _tuple) \
   ((PqCentroidTuple *)((Pointer)(_tuple) + (_state)->size_of_centroid_tuple))
 #define PqCentroidTuplesGetTuple(_buildState, _offset) \
   ((PqCentroidTuple *)((char*)_buildState->centroids.ctups + \
     _offset * (_buildState->ivf_state.size_of_centroid_tuple)))
+#define PqSubvectorTuplesGetTuple(_buildState, _offset) \
+  ((PqSubvectorTuple *)((char*)_buildState->centroids.pqtups + \
+    _offset * (_buildState->ivf_state.size_of_subvector_tuple)))
 #define PqInvertedListPageGetData(_page)	((PqInvertedListTuple *)PageGetContents(_page))
 #define PqInvertedListPageGetTuple(_state, _page, _offset) \
   ((PqInvertedListTuple *)(PageGetContents(_page) \
@@ -188,12 +202,17 @@ typedef IvfpqScanOpaqueData *IvfpqScanOpaque;
   (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) \
    - IvfpqPageGetMaxOffset(_page) * (_state)->size_of_centroid_tuple \
    - MAXALIGN(sizeof(IvfpqPageOpaqueData)))
+#define PqSubvectorPageGetFreeSpace(_state, _page) \
+  (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) \
+   - IvfpqPageGetMaxOffset(_page) * (_state)->size_of_subvector_tuple \
+   - MAXALIGN(sizeof(IvfpqPageOpaqueData)))
 #define PqInvertedListPageGetFreeSpace(_state, _page) \
   (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) \
    - IvfpqPageGetMaxOffset(_page) * (_state)->size_of_invertedlist_tuple \
    - MAXALIGN(sizeof(IvfpqPageOpaqueData)))
 
 #define PQCENTROIDTUPLEHDRSZ offsetof(PqCentroidTuple, vector)
+#define PQSUBVECTORTUPLEHDRSZ offsetof(PqSubvectorTuple, vector)
 #define PQINVERTEDLISTTUPLEHDRSZ offsetof(PqInvertedListTuple, encoded_vector)
 #define PQINVERTEDLISTRAWTUPLEHDRSZ offsetof(PqInvertedListRawTuple, vector)
 
@@ -217,6 +236,8 @@ extern void PqSearchKNNInvertedListFromCentroidPages(
     Relation index, IvfpqState *state,
     IvfpqMetaPageData *meta, float4 *tuple_vector,
     int count, bool reverse, PqCentroidSearchItem *items, bool isScan);
+extern PqSubvectorTuple *PqGetSubvectorTuples(Relation index, IvfpqState *state,
+  IvfpqMetaPageData *meta);
 
 // ivfpq_build.c
 extern IndexBuildResult *ivfpq_build(Relation heap, Relation index, IndexInfo *indexInfo);

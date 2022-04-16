@@ -72,9 +72,10 @@ InitCentroids(IvfpqBuildState *buildState) {
   List            *splits;
   ListCell        *cell;
   PqCentroidTuple   *ctup;
+  PqSubvectorTuple  *pqtup;
   IvfpqOptions  *opts;
   FILE            *fp;
-  int             loop, i, dim, count, vc;
+  int             loop, i, dim, count, vc, total_sub, subdim;
   float           val;
 
   loop = 0;
@@ -174,9 +175,16 @@ InitCentroids(IvfpqBuildState *buildState) {
           centroids->dim * sizeof(float4)); 
       ctup->head_ivl_blkno = 0;
       ctup->inverted_list_size = 0;
-      memcpy((char *)ctup->vector + centroids->dim * sizeof(float4),
-        (void*)buildState->clustering->pq_mean,
-        centroids->dim * sizeof(float4) * opts->pq_centroid_num);
+    }
+    total_sub = opts->partition_num * opts->pq_centroid_num;
+    subdim = opts->dimension / opts->partition_num;
+    centroids->pqtups = (PqSubvectorTuple *) palloc0(
+        buildState->ivf_state.size_of_subvector_tuple * total_sub);
+    for (i = 0; i < total_sub; ++i) {
+        pqtup = PqSubvectorTuplesGetTuple(buildState, i);
+        memcpy((void*)(pqtup->vector),
+          (void*)&(buildState->clustering->pqmean[i * subdim]),
+          subdim * sizeof(float4));
     }
   }
   buildState->buf_list = (Buffer*) palloc0(sizeof(Buffer) * centroids->count);
@@ -235,7 +243,7 @@ InvertedListPageAddItem(IvfpqState *state, Page page,
 
 static void
 InvertedListFormEncodedTuple(IvfpqState *state, PqInvertedListRawTuple *tuple, PqInvertedListTuple *encoded_tuple, 
-    PqCentroidTuple *ctup) {
+    PqCentroidTuple *ctup, PqSubvectorTuple *pqtup) {
     //TODO omp for encoding in different subvector space
     float4 *residual;
     float minDistance;
@@ -261,10 +269,10 @@ InvertedListFormEncodedTuple(IvfpqState *state, PqInvertedListRawTuple *tuple, P
     //TODO omp 
     for (i = 0; i < parnum; i++) {
       subvec = tuple->vector + i * subdim;
-      pqvec = ctup->vector + dim + i * subdim * pqnum;
       minDistance = FLT_MAX;
       for (j = 0; j < pqnum; j++) {
-          dis = fvec_L2sqr(subvec, pqvec + j * subdim, subdim);
+          pqvec = pqtup[i * pqnum + j]->vector;
+          dis = fvec_L2sqr(subvec, pqvec, subdim);
           if (dis < minDistance) {
             minDistance = dis;
             code = (uint8_t)j;
@@ -283,6 +291,7 @@ AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
   Buffer  buffer, newBuffer;
   PqInvertedListTuple *encoded_tuple;
   PqCentroidTuple *ctup;
+  PqSubvectorTuple *pqtup;
 
   newBuffer = 0;
   minPos = 0;
@@ -299,7 +308,7 @@ AddTupleToInvertedList(Relation index, IvfpqBuildState *buildState,
 
   ctup = (PqCentroidTuple *)((char*)buildState->centroids.ctups + minPos * buildState->ivf_state.size_of_centroid_tuple);
 
-  InvertedListFormEncodedTuple(&(buildState->ivf_state), tuple, encoded_tuple, ctup);
+  InvertedListFormEncodedTuple(&(buildState->ivf_state), tuple, encoded_tuple, ctup, buildState->centroids.pqtups);
 
   if (buildState->buf_list[minPos] == 0) {
     // first item in invertedlist
@@ -344,6 +353,7 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
   PqCentroidTuple       *ctup;
   GenericXLogState    *gxlogState;
   PqInvertedListTuple *encoded_tuple;
+  PqSubvectorTuple *pqtuples;
 
   memset(items, 0, sizeof(PqCentroidSearchItem));
 
@@ -357,10 +367,12 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
     return false;
   }
 
+  pqtuples = PqGetSubvectorTuples(index, state, meta);
+
   encoded_tuple = (PqInvertedListTuple *)palloc0(state->size_of_invertedlist_tuple);
   encoded_tuple->heap_ptr = tuple->heap_ptr;
 
-  InvertedListFormEncodedTuple(state, tuple, encoded_tuple, items[0].ctup);
+  InvertedListFormEncodedTuple(state, tuple, encoded_tuple, items[0].ctup, pqtuples);
 
   if (items[0].head_ivl_blkno == 0) {
     // first item in invertedlist
@@ -378,6 +390,9 @@ AddTupleToInvertedListForInsert(Relation index, IvfpqState *state,
   }
 
   InvertedListPageAddItem(state, page, encoded_tuple); 
+  pfree(pqtuples);
+  pfree(encoded_tuple);
+
   PqFlushBufferPage(index, buffer, true);
   return true;
 }
@@ -446,7 +461,7 @@ InvertedListFormTuple(IvfpqState *state, ItemPointer iptr,
   return res;
 }
 
-  static void
+static void
 CentroidPageAddItem(IvfpqState *state, Page page, PqCentroidTuple *tuple)
 {
   Pointer           ptr;
@@ -458,6 +473,22 @@ CentroidPageAddItem(IvfpqState *state, Page page, PqCentroidTuple *tuple)
   memcpy((Pointer) ctup, (Pointer) tuple, state->size_of_centroid_tuple);
   opaque->maxoff++;
   ptr = (Pointer) PqCentroidPageGetTuple(state, page, opaque->maxoff + 1);
+  ((PageHeader) page)->pd_lower = ptr - page;
+  Assert(((PageHeader) page)->pd_lower <= ((PageHeader) page)->pd_upper);
+}
+
+static void
+SubvectorPageAddItem(IvfpqState *state, Page page, PqSubvectorTuple *tuple)
+{
+  Pointer           ptr;
+  IvfpqPageOpaque opaque;
+  PqSubvectorTuple     *pqtup;
+
+  opaque = IvfpqPageGetOpaque(page);
+  pqtup = PqSubvectorPageGetTuple(state, page, opaque->maxoff + 1);
+  memcpy((Pointer) pqtup, (Pointer) tuple, state->size_of_subvector_tuple);
+  opaque->maxoff++;
+  ptr = (Pointer) PqSubvectorPageGetTuple(state, page, opaque->maxoff + 1);
   ((PageHeader) page)->pd_lower = ptr - page;
   Assert(((PageHeader) page)->pd_lower <= ((PageHeader) page)->pd_upper);
 }
@@ -483,6 +514,7 @@ BuildCentroidPages(Relation index, IvfpqBuildState *buildState) {
   Buffer              newBuf;
   IvfpqPageOpaque   opaque;
   int                 i;
+  int                 total_pq;
   GenericXLogState    *state;
   IvfpqMetaPageData *meta;
 
@@ -521,6 +553,31 @@ BuildCentroidPages(Relation index, IvfpqBuildState *buildState) {
   // flush last buffer page
   PqFlushBufferPage(index, tmpBuf, true);
   meta->centroid_page_count ++;
+
+  meta->pq_centroid_page_count = 0;
+  total_pq = meta->opts.partition_num * meta->opts.pq_centroid_num;
+  tmpPage = CreateNewCentroidPage(index, &tmpBuf);
+  meta->pq_centroid_head_blkno = BufferGetBlockNumber(tmpBuf);
+
+  for (i = 0; i < total_pq; ++i) {
+    if (PqSubvectorPageGetFreeSpace(&(buildState->ivf_state), tmpPage) <
+        buildState->ivf_state.size_of_subvector_tuple) {
+      newPage = CreateNewCentroidPage(index, &newBuf);
+      opaque = IvfpqPageGetOpaque(tmpPage);
+      opaque->next = BufferGetBlockNumber(newBuf);
+      PqFlushBufferPage(index, tmpBuf, true);
+      tmpPage = newPage;
+      tmpBuf = newBuf;
+      meta->pq_centroid_page_count ++;
+    }
+    SubvectorPageAddItem(&buildState->ivf_state, tmpPage,
+        PqSubvectorTuplesGetTuple(buildState, i));
+  }
+
+  // flush last buffer page
+  PqFlushBufferPage(index, tmpBuf, true);
+  meta->pq_centroid_page_count ++;
+
   GenericXLogFinish(state);
   UnlockReleaseBuffer(metaBuffer);
 }
