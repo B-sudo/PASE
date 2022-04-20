@@ -84,6 +84,7 @@ typedef struct PqCentroidTuple {
 } PqCentroidTuple;
 
 typedef struct PqSubvectorTuple {
+  uint8           is_deleted;
   float4          vector[FLEXIBLE_ARRAY_MEMBER];
 } PqSubvectorTuple;
 

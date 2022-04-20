@@ -238,6 +238,7 @@ PqGetSubvectorTuples(Relation index, IvfpqState *state,
         memcpy((Pointer)&(pqtups[i++]),(Pointer)pqtup, state->size_of_subvector_tuple);
       }
     }
+    UnlockReleaseBuffer(pqbuffer);
   }
   Assert(i == state->opts.partition_num * state->opts.pq_centroid_num);
 

@@ -183,7 +183,7 @@ InitCentroids(IvfpqBuildState *buildState) {
     for (i = 0; i < total_sub; ++i) {
         pqtup = PqSubvectorTuplesGetTuple(buildState, i);
         memcpy((void*)(pqtup->vector),
-          (void*)&(buildState->clustering->pqmean[i * subdim]),
+          (void*)&(buildState->clustering->pq_mean[i * subdim]),
           subdim * sizeof(float4));
     }
   }
@@ -271,7 +271,7 @@ InvertedListFormEncodedTuple(IvfpqState *state, PqInvertedListRawTuple *tuple, P
       subvec = tuple->vector + i * subdim;
       minDistance = FLT_MAX;
       for (j = 0; j < pqnum; j++) {
-          pqvec = pqtup[i * pqnum + j]->vector;
+          pqvec = pqtup[i * pqnum + j].vector;
           dis = fvec_L2sqr(subvec, pqvec, subdim);
           if (dis < minDistance) {
             minDistance = dis;
