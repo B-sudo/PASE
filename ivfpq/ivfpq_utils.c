@@ -235,7 +235,7 @@ PqGetSubvectorTuples(Relation index, IvfpqState *state,
                    maxOffset = IvfpqPageGetMaxOffset(pqpage);
       for (offset = 1; offset <= maxOffset; ++offset) {
         pqtup = PqSubvectorPageGetTuple(state, pqpage, offset);
-        memcpy((Pointer)&(pqtups[i++]),(Pointer)pqtup, state->size_of_subvector_tuple);
+        memcpy((Pointer)((char*)pqtups + (i++) * state->size_of_subvector_tuple),(Pointer)pqtup, state->size_of_subvector_tuple);
       }
     }
     UnlockReleaseBuffer(pqbuffer);

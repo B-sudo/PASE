@@ -128,7 +128,7 @@ ivfpq_endscan(IndexScanDesc scan) {
 }
 
 static float
-CalDistanceForEncoded_L2sqr(IvfpqMetaPageData *meta, float4 *residual, 
+CalDistanceForEncoded_L2sqr(IvfpqState *state, IvfpqMetaPageData *meta, float4 *residual, 
 uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
     int partition_num = meta->opts.partition_num;
     int pq_centroid_num = meta->opts.pq_centroid_num;
@@ -145,7 +145,7 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
     for (i = 0; i < partition_num; i++) {
         Assert(encoded_vector[i] < pq_centroid_num);
         memcpy((void *)(generated_vector + i * subdim), 
-        (void *)(pqtups[i * pq_centroid_num + encoded_vector[i]].vector),
+        (void *)(((char*)pqtups+(i * pq_centroid_num + encoded_vector[i])*(state->size_of_subvector_tuple))->vector),
         subdim * sizeof(float4));
     }
 
@@ -195,7 +195,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     for (i = 0; i < opaque->maxoff; ++i) {
       itup = PqInvertedListPageGetTuple(state, page, i + 1); 
       //dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
-      dis = CalDistanceForEncoded_L2sqr(meta, residual, 
+      dis = CalDistanceForEncoded_L2sqr(state, meta, residual, 
       itup->encoded_vector, pqtuples);
       if (mutex) {
         pthread_mutex_lock(mutex);

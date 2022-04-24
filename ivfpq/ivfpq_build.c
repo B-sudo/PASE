@@ -269,7 +269,7 @@ InvertedListFormEncodedTuple(IvfpqState *state, PqInvertedListRawTuple *tuple, P
       subvec = tuple->vector + i * subdim;
       minDistance = FLT_MAX;
       for (j = 0; j < pqnum; j++) {
-          pqvec = pqtup[i * pqnum + j].vector;
+          pqvec = (PqSubvectorTuple *)((char*)pqtup + (i * pqnum + j) * state->size_of_subvector_tuple)->vector;
           dis = fvec_L2sqr(subvec, pqvec, subdim);
           if (dis < minDistance) {
             minDistance = dis;
