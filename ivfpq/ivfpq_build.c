@@ -256,8 +256,6 @@ InvertedListFormEncodedTuple(IvfpqState *state, PqInvertedListRawTuple *tuple, P
     uint8_t code;
     float dis;
 
-    //there is a centroid vector and pq_centroids vectors in ctup.
-
     residual = (float4 *)palloc0(sizeof(float4) * dim);
     for (i = 0; i < dim; i++) 
         residual[i] = tuple->vector[i] - ctup->vector[i];

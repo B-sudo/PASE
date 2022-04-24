@@ -136,6 +136,7 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
     int subdim;
     int i;
     float4 *generated_vector;
+    float4 result;
 
     Assert(dim % partition_num == 0);
     subdim = dim / partition_num;
@@ -148,13 +149,19 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
         subdim * sizeof(float4));
     }
 
-    return fvec_L2sqr(residual, generated_vector, dim); 
+    result = fvec_L2sqr(residual, generated_vector, dim); 
+
+    pfree(generated_vector);
+
+    return result;
+    
 }
 
 static void
 ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     IvfpqState *state, BlockNumber headBlkno,
-    float4 *queryVec, PqCentroidTuple *ctup, pairingheap *queue, pthread_mutex_t *mutex) {
+    float4 *queryVec, PqCentroidTuple *ctup, PqSubvectorTuple *pqtuples, 
+    pairingheap *queue, pthread_mutex_t *mutex) {
   BlockNumber            blkno;
   Buffer                 buffer;
   Page                   page;
@@ -165,14 +172,11 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
   PqInvertedListSearchItem *item;
   float4                 *residual;
   int                    dim;
-  PqSubvectorTuple       *pqtuples;
 
   blkno = headBlkno;
 
   dim = meta->opts.dimension;
   residual = (float4 *)palloc0(sizeof(float4) * dim);
-
-  pqtuples = PqGetSubvectorTuples(index, state, meta);
 
   for (i = 0; i < dim; i++) 
     residual[i] = queryVec[i] - ctup->vector[i];
@@ -224,6 +228,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
   uint32                 scanCentroidNum;
   PqInvertedListSearchItem *item;
   PqCentroidSearchItem     *citems;
+  PqSubvectorTuple         *pqtuples;
   int                    i;
 
   if (dir != ForwardScanDirection) {
@@ -288,6 +293,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
     PqSearchKNNInvertedListFromCentroidPages(scan->indexRelation,
         &so->state, meta, so->scan_pase->x, scanCentroidNum,
         reverse, citems, true);
+    pqtuples = PqGetSubvectorTuples(scan->indexRelation, &so->state, meta);
     if (meta->opts.open_omp) {
       pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
       omp_set_num_threads(meta->opts.omp_thread_num);
@@ -302,7 +308,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
         }
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, citems[i].ctup, so->queue, &mutex);
+            so->scan_pase->x, citems[i].ctup, pqtuples, so->queue, &mutex);
         pfree(citems[i].ctup);
       }
       pthread_mutex_destroy(&mutex);
@@ -317,7 +323,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
         }
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, citems[i].ctup, so->queue, (pthread_mutex_t *)NULL);
+            so->scan_pase->x, citems[i].ctup, pqtuples, so->queue, (pthread_mutex_t *)NULL);
         pfree(citems[i].ctup);
       }
     }
@@ -333,6 +339,7 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
     }
     so->first_call = false;
     pfree(citems);
+    pfree(pqtuples);
     UnlockReleaseBuffer(metaBuffer);
   }
   else {
