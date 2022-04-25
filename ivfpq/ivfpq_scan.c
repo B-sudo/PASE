@@ -145,7 +145,7 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
     for (i = 0; i < partition_num; i++) {
         Assert(encoded_vector[i] < pq_centroid_num);
         memcpy((void *)(generated_vector + i * subdim), 
-        (void *)(((char*)pqtups+(i * pq_centroid_num + encoded_vector[i])*(state->size_of_subvector_tuple))->vector),
+        (void *)(((PqSubvectorTuple*)((char*)pqtups+(i * pq_centroid_num + encoded_vector[i])*(state->size_of_subvector_tuple)))->vector),
         subdim * sizeof(float4));
     }
 

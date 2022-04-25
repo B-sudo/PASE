@@ -266,7 +266,7 @@ InvertedListFormEncodedTuple(IvfpqState *state, PqInvertedListRawTuple *tuple, P
     subdim = dim / parnum;
     //TODO omp 
     for (i = 0; i < parnum; i++) {
-      subvec = tuple->vector + i * subdim;
+      subvec = residual + i * subdim;
       minDistance = FLT_MAX;
       for (j = 0; j < pqnum; j++) {
           pqvec = ((PqSubvectorTuple *)((char*)pqtup + (i * pqnum + j) * state->size_of_subvector_tuple))->vector;
