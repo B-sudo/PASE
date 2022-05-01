@@ -43,7 +43,7 @@ _PG_init(void) {
     hnsw_relopt_kind = add_reloption_kind();
     add_int_reloption(hnsw_relopt_kind, "dim",
                       "vector dimension",
-                      256, 8, 512);
+                      256, 8, 1024);
     add_int_reloption(hnsw_relopt_kind, "base_nb_num",
                       "hnsw base_nb_num",
                       16, 5, 64);
