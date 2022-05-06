@@ -62,9 +62,9 @@ CREATE OPERATOR <#> (
   COMMUTATOR = '<#>'
 );
 
-CREATE OPERATOR <$> (
+CREATE OPERATOR <@> (
   LEFTARG = float4[], RIGHTARG = pase, PROCEDURE = g_pase_distance,
-  COMMUTATOR = '<$>'
+  COMMUTATOR = '<@>'
 );
 
 CREATE OPERATOR <!> (
@@ -114,7 +114,7 @@ CREATE ACCESS METHOD pase_ivfpq TYPE INDEX HANDLER pase_ivfpq;
 
 CREATE OPERATOR CLASS pase_ivfpq_float_ops
 DEFAULT FOR TYPE float4[] USING pase_ivfpq AS
-  OPERATOR  1  <$> (float4[], pase) FOR ORDER BY float_ops;
+  OPERATOR  1  <@> (float4[], pase) FOR ORDER BY float_ops;
 
 CREATE OPERATOR CLASS pase_ivfpq_text_ops
 DEFAULT FOR TYPE text USING pase_ivfpq AS
