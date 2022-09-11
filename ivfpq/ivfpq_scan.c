@@ -129,29 +129,38 @@ ivfpq_endscan(IndexScanDesc scan) {
 
 static float
 CalDistanceForEncoded_L2sqr(IvfpqState *state, IvfpqMetaPageData *meta, float4 *residual, 
-uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
+uint8_t *encoded_vector, PqSubvectorTuple *pqtups, float4 *precomputedTable) {
     int partition_num = meta->opts.partition_num;
     int pq_centroid_num = meta->opts.pq_centroid_num;
     int dim = meta->opts.dimension;
     int subdim;
     int i;
     float4 *generated_vector;
-    float4 result;
+    float4 result=0;
 
     Assert(dim % partition_num == 0);
     subdim = dim / partition_num;
 
-    generated_vector = (float4 *)palloc0(sizeof(float4) * dim);
-    for (i = 0; i < partition_num; i++) {
-        Assert(encoded_vector[i] < pq_centroid_num);
-        memcpy((void *)(generated_vector + i * subdim), 
-        (void *)(((PqSubvectorTuple*)((char*)pqtups+(i * pq_centroid_num + encoded_vector[i])*(state->size_of_subvector_tuple)))->vector),
-        subdim * sizeof(float4));
+    if (meta->opts.use_precomputedtable)
+    {
+      Assert(precomputedTable != NULL);
+      for (i = 0; i < partition_num; i++)
+        result += precomputedTable[i * pq_centroid_num + encoded_vector[i]];
     }
+    else
+    {
+      generated_vector = (float4 *)palloc0(sizeof(float4) * dim);
+      for (i = 0; i < partition_num; i++) {
+          Assert(encoded_vector[i] < pq_centroid_num);
+          memcpy((void *)(generated_vector + i * subdim), 
+          (void *)(((PqSubvectorTuple*)((char*)pqtups+(i * pq_centroid_num + encoded_vector[i])*(state->size_of_subvector_tuple)))->vector),
+          subdim * sizeof(float4));
+      }
 
-    result = fvec_L2sqr(residual, generated_vector, dim); 
+      result = fvec_L2sqr(residual, generated_vector, dim); 
 
-    pfree(generated_vector);
+      pfree(generated_vector);
+    }
 
     return result;
     
@@ -160,7 +169,7 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups) {
 static void
 ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     IvfpqState *state, BlockNumber headBlkno,
-    float4 *queryVec, PqCentroidTuple *ctup, PqSubvectorTuple *pqtuples, 
+    float4 *queryVec, PqCentroidTuple *ctup, PqSubvectorTuple *pqtuples, float4 *precomputedTable, 
     pairingheap *queue, pthread_mutex_t *mutex) {
   BlockNumber            blkno;
   Buffer                 buffer;
@@ -196,7 +205,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
       itup = PqInvertedListPageGetTuple(state, page, i + 1); 
       //dis = fvec_L2sqr(queryVec, itup->vector, meta->opts.dimension); 
       dis = CalDistanceForEncoded_L2sqr(state, meta, residual, 
-      itup->encoded_vector, pqtuples);
+      itup->encoded_vector, pqtuples, precomputedTable);
       if (mutex) {
         pthread_mutex_lock(mutex);
       }
@@ -292,13 +301,13 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
     scan->xs_recheckorderby = false;
     PqSearchKNNInvertedListFromCentroidPages(scan->indexRelation,
         &so->state, meta, so->scan_pase->x, scanCentroidNum,
-        reverse, citems, true);
+        reverse, citems, true); //citems(selected centriod)
     pqtuples = PqGetSubvectorTuples(scan->indexRelation, &so->state, meta);
     if (meta->opts.open_omp) {
       pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
       omp_set_num_threads(meta->opts.omp_thread_num);
 #pragma omp for 
-      for (i = 0; i < scanCentroidNum; ++i) {
+      for (i = 0; i < scanCentroidNum; ++i) { 
         if (citems[i].cblkno == 0) {
           continue;
         }
@@ -306,10 +315,18 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
         if (citems[i].head_ivl_blkno == 0) {
           continue;
         }
+        float4 * precomputedTable = NULL;
+        if (meta->opts.use_precomputedtable)
+        {
+          precomputedTable=(float4*)palloc0(sizeof(float4) * meta->opts.partition_num * meta->opts.pq_centroid_num);
+          computePrecomputeTable(meta, &so->state, so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable);
+        }
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, citems[i].ctup, pqtuples, so->queue, &mutex);
+            so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable, so->queue, &mutex);
         pfree(citems[i].ctup);
+        if (meta->opts.use_precomputedtable)
+          pfree(precomputedTable);
       }
       pthread_mutex_destroy(&mutex);
     } else {
@@ -321,10 +338,18 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
         if (citems[i].head_ivl_blkno == 0) {
           continue;
         }
+        float4 * precomputedTable = NULL;
+        if (meta->opts.use_precomputedtable)
+        {
+          precomputedTable=(float4*)palloc0(sizeof(float4) * meta->opts.partition_num * meta->opts.pq_centroid_num);
+          computePrecomputeTable(meta, &so->state, so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable);
+        }
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, citems[i].ctup, pqtuples, so->queue, (pthread_mutex_t *)NULL);
+            so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable, so->queue, (pthread_mutex_t *)NULL);
         pfree(citems[i].ctup);
+        if (meta->opts.use_precomputedtable)
+          pfree(precomputedTable);
       }
     }
     if (!pairingheap_is_empty(so->queue)) {
@@ -369,3 +394,38 @@ ivfpq_getbitmap(IndexScanDesc scan, TIDBitmap *tbm) {
   elog(NOTICE, "ivfpq_getbitmap begin");
   return 0;
 }
+
+static void
+computePrecomputeTable(IvfpqMetaPageData *meta, IvfpqState *state, float4 *queryVec, PqCentroidTuple *ctup, 
+                        PqSubvectorTuple *pqtuples,float4 *precomputedTable)
+{
+  
+  int dim;
+  int partition_num;
+  int pq_centroid_num;
+  int i,j;
+  int subdim;
+
+  dim = meta->opts.dimension;
+  partition_num = meta->opts.partition_num;
+  pq_centroid_num = meta->opts.pq_centroid_num;
+  subdim = dim / partition_num;
+  residual = (float4 *)palloc0(sizeof(float4) * dim);
+
+  for (i = 0; i < dim; i++) 
+    residual[i] = queryVec[i] - ctup->vector[i];
+
+  for (i = 0; i < partition_num; i++)
+  {
+    for (j = 0; j < pq_centroid_num; j++)
+    {
+      precomputedTable[i * pq_centroid_num + j] = fvec_L2sqr(
+        (PqSubvectorTuple*)(((char*)pqtuples) + (i*pq_centroid_num+j)*(state->size_of_subvector_tuple))->vector,
+        residual + i * subdim,
+        subdim
+      )
+    }
+  }
+  pfree(residual);
+}
+
