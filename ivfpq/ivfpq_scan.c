@@ -225,6 +225,41 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
   pfree(residual);
 }
 
+static void
+computePrecomputeTable(IvfpqMetaPageData *meta, IvfpqState *state, float4 *queryVec, PqCentroidTuple *ctup, 
+                        PqSubvectorTuple *pqtuples,float4 *precomputedTable)
+{
+  
+  int dim;
+  int partition_num;
+  int pq_centroid_num;
+  int i,j;
+  int subdim;
+
+  dim = meta->opts.dimension;
+  partition_num = meta->opts.partition_num;
+  pq_centroid_num = meta->opts.pq_centroid_num;
+  subdim = dim / partition_num;
+  residual = (float4 *)palloc0(sizeof(float4) * dim);
+
+  for (i = 0; i < dim; i++) 
+    residual[i] = queryVec[i] - ctup->vector[i];
+
+  for (i = 0; i < partition_num; i++)
+  {
+    for (j = 0; j < pq_centroid_num; j++)
+    {
+      precomputedTable[i * pq_centroid_num + j] = fvec_L2sqr(
+        ((PqSubvectorTuple*)(((char*)pqtuples) + (i*pq_centroid_num+j)*(state->size_of_subvector_tuple)))->vector,
+        residual + i * subdim,
+        subdim
+      );
+    }
+  }
+  pfree(residual);
+}
+
+
 // ivfpq_gettuple() -- Get the next tuple in the scan
 bool
 ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
@@ -394,38 +429,3 @@ ivfpq_getbitmap(IndexScanDesc scan, TIDBitmap *tbm) {
   elog(NOTICE, "ivfpq_getbitmap begin");
   return 0;
 }
-
-static void
-computePrecomputeTable(IvfpqMetaPageData *meta, IvfpqState *state, float4 *queryVec, PqCentroidTuple *ctup, 
-                        PqSubvectorTuple *pqtuples,float4 *precomputedTable)
-{
-  
-  int dim;
-  int partition_num;
-  int pq_centroid_num;
-  int i,j;
-  int subdim;
-
-  dim = meta->opts.dimension;
-  partition_num = meta->opts.partition_num;
-  pq_centroid_num = meta->opts.pq_centroid_num;
-  subdim = dim / partition_num;
-  residual = (float4 *)palloc0(sizeof(float4) * dim);
-
-  for (i = 0; i < dim; i++) 
-    residual[i] = queryVec[i] - ctup->vector[i];
-
-  for (i = 0; i < partition_num; i++)
-  {
-    for (j = 0; j < pq_centroid_num; j++)
-    {
-      precomputedTable[i * pq_centroid_num + j] = fvec_L2sqr(
-        (PqSubvectorTuple*)(((char*)pqtuples) + (i*pq_centroid_num+j)*(state->size_of_subvector_tuple))->vector,
-        residual + i * subdim,
-        subdim
-      )
-    }
-  }
-  pfree(residual);
-}
-

@@ -51,7 +51,7 @@ typedef struct IvfpqOptions {
 
   int    open_omp;                  // whether open omp, 0:close, 1:open
   int    omp_thread_num;            // omp thread number
-  int    use_precomputedtable       // whether to use precomputedtable
+  int    use_precomputedtable;      // whether to use precomputedtable
   int    base64_encoded;            // data whether base64 encoded
   int	 clustering_params_offset;  // clustering parameters offset
 } IvfpqOptions;

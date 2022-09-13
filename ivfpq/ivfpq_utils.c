@@ -379,7 +379,7 @@ ivfpq_options(Datum reloptions, bool validate) {
     {"base64_encoded", RELOPT_TYPE_INT, offsetof(IvfpqOptions, base64_encoded)},
     {"partition_num", RELOPT_TYPE_INT, offsetof(IvfpqOptions, partition_num)},
     {"pq_centroid_num", RELOPT_TYPE_INT, offsetof(IvfpqOptions, pq_centroid_num)},
-    {"use_precomputedtable", RELOPT_TYPE_INT, offsetof(IvfpqOptions, use_precomputedtable)}
+    {"use_precomputedtable", RELOPT_TYPE_INT, offsetof(IvfpqOptions, use_precomputedtable)},
     {"clustering_params", RELOPT_TYPE_STRING, offsetof(IvfpqOptions, clustering_params_offset)}
   };
 
