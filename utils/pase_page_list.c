@@ -60,10 +60,19 @@ InitPasePageListByNo(Relation index, int32 header,
 PasePageList *
 InitPasePageList(Relation index, FormPaseTuple former,
     int num, int tupSize, int opaqueSize, void *arg) {
+  /*  The implementation about PasePageList is quite strange
+      Assume that block ids of a NB page list is 100(full), 101(full), 102(full), 103(not full)
+      next_blkid in Page Opaque shows a link 103->102->101->100, and the list->header is set to 103. This is what previous code here wanted 
+      But we can see that in PasePlGet it implies a link 100->101->102->103 based on consequent blkids, and list->header should be 100
+      The latter link is easier to use so now the list->header is set to 100, and it works. 
+      TODO: if concurrent index building is wanted, we should use the former, for the latter is based on consequent blkids. How the tuple is found
+      in PasePlGet also needs to be modified  */
+
   int blkid = -1;
   int i;
   PasePageList *list = palloc(sizeof(PasePageList));
   PaseTuple *tup;
+  bool headerflag = false;
 
   list->tup_size = tupSize;
   list->opaque_size = opaqueSize;
@@ -79,9 +88,14 @@ InitPasePageList(Relation index, FormPaseTuple former,
       list->total_tup_count++;
     } else {
       blkid = PaseFlushCachedPage(index, list);
+      if (!headerflag)
+      {
+        list->header = blkid;
+        headerflag = true;
+      }
       list->max_writed_blkid = blkid;
       InitPaseCachePage(list);
-      if (PasePageAddItem(list, tup)) {
+      if (!PasePageAddItem(list, tup)) {
         elog(ERROR, "could not add new tuple to empty page");
       }
       list->buffer_count++;
@@ -91,8 +105,12 @@ InitPasePageList(Relation index, FormPaseTuple former,
   }
   if (list->buffer_count > 0) {
     blkid = PaseFlushCachedPage(index, list);
+    if (!headerflag)
+      {
+        list->header = blkid;
+        headerflag = true;
+      }
   }
-  list->header = blkid;
   list->tup_count = (BLCKSZ - MAXALIGN(SizeOfPageHeaderData)
     - MAXALIGN(list->opaque_size)) / list->tup_size;
   return list;
