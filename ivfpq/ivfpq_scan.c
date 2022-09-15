@@ -235,6 +235,7 @@ computePrecomputeTable(IvfpqMetaPageData *meta, IvfpqState *state, float4 *query
   int pq_centroid_num;
   int i,j;
   int subdim;
+  float4 * residual;
 
   dim = meta->opts.dimension;
   partition_num = meta->opts.partition_num;
