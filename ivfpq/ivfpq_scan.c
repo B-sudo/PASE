@@ -137,6 +137,7 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups, float4 *precomputedTable) {
     int i;
     float4 *generated_vector;
     float4 result=0;
+    float4 * table = precomputedTable;
 
     Assert(dim % partition_num == 0);
     subdim = dim / partition_num;
@@ -145,7 +146,11 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups, float4 *precomputedTable) {
     {
       Assert(precomputedTable != NULL);
       for (i = 0; i < partition_num; i++)
-        result += precomputedTable[i * pq_centroid_num + encoded_vector[i]];
+      {
+        //result += table[i * pq_centroid_num + encoded_vector[i]];
+        result += table[encoded_vector[i]];
+        table += pq_centroid_num;
+      }
     }
     else
     {
@@ -245,7 +250,7 @@ computePrecomputeTable(IvfpqMetaPageData *meta, IvfpqState *state, float4 *query
 
   for (i = 0; i < dim; i++) 
     residual[i] = queryVec[i] - ctup->vector[i];
-
+#pragma omp for
   for (i = 0; i < partition_num; i++)
   {
     for (j = 0; j < pq_centroid_num; j++)

@@ -107,7 +107,7 @@ _PG_init(void) {
                       1, 1, 256);
     add_int_reloption(ivfpq_relopt_kind, "use_precomputedtable",
                       "whether to use precomputedtable",
-                      0, 0, 1);
+                      1, 0, 1);
     add_string_reloption(ivfpq_relopt_kind, "clustering_params",
                       "clustering parameters", "", NULL);
 
