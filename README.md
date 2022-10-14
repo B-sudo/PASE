@@ -1,25 +1,32 @@
+# Target
+This repository contains code used for comparing performance of PASE and Faiss.
+
 # Pase
+Pase is an extension of PostgreSQL used for Approximate Nearest Neighbor Search. 
+It has implemented two index: IVFFlat and HNSW. We implemented a new index IVFPQ in
+this repository.
 
-Pase: PostgreSQL Ultra-High Dimensional Approximate Nearest Neighbor Search Extension
+## Prerequisite
 
-## Building
+1. Install PostgreSQL11.0 (Pase may have conflicts with newer versions of PG)
+2. Install Openmp
 
-1. install psql
-2. make USE_PGXS=1
+## Pase Building
 
-## How Pase works
+1. Download Pase under folder `contrib` of PG
+2. cd pase
+3. `make USE_PGXS=`
+4. `make install`
+5. Start PG
+6. Input `create extension pase;` in psql command line
 
-## Full documentation of Pase
 
-## Authors
-Wen Yang, Tao Li, Gai Fang, Hong Wei
+## Modified From:
 
-## Reference
+- [Pase: PostgreSQL Ultra-High Dimensional Approximate Nearest Neighbor Search Extension](https://github.com/alipay/PASE)
 
-## License
-
-## Thanks
-
-Thanks to:
+# Faiss
 
 - [Faiss: A Library for Efficient Similarity Search and Clustering of Dense Vectors](https://github.com/facebookresearch/faiss)
+
+
