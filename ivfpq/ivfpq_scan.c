@@ -174,7 +174,7 @@ uint8_t *encoded_vector, PqSubvectorTuple *pqtups, float4 *precomputedTable) {
 static void
 ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     IvfpqState *state, BlockNumber headBlkno,
-    float4 *queryVec, PqCentroidTuple *ctup, PqSubvectorTuple *pqtuples, float4 *precomputedTable, 
+    float4 *queryVec, PqCentroidTuple *ctup, PqSubvectorTuple *pqtuples, float4 *precomputedTable, float4 *residual,
     pairingheap *queue, pthread_mutex_t *mutex) {
   BlockNumber            blkno;
   Buffer                 buffer;
@@ -190,7 +190,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
   blkno = headBlkno;
 
   dim = meta->opts.dimension;
-  residual = (float4 *)palloc0(sizeof(float4) * dim);
+  //residual = (float4 *)palloc0(sizeof(float4) * dim);
 
   for (i = 0; i < dim; i++) 
     residual[i] = queryVec[i] - ctup->vector[i];
@@ -227,7 +227,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
     blkno = opaque->next;
   }
 
-  pfree(residual);
+  //pfree(residual);
 }
 
 static void
@@ -362,12 +362,14 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
           precomputedTable=(float4*)palloc0(sizeof(float4) * meta->opts.partition_num * meta->opts.pq_centroid_num);
           computePrecomputeTable(meta, &so->state, so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable);
         }
+        float4 * residual = (float4 *)palloc0(sizeof(float4) * meta->opts.dimension);
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable, so->queue, &mutex);
+            so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable, residual, so->queue, &mutex);
         pfree(citems[i].ctup);
         if (meta->opts.use_precomputedtable)
           pfree(precomputedTable);
+        pfree(residual);
       }
       pthread_mutex_destroy(&mutex);
     } else {
@@ -385,12 +387,14 @@ ivfpq_gettuple(IndexScanDesc scan, ScanDirection dir) {
           precomputedTable=(float4*)palloc0(sizeof(float4) * meta->opts.partition_num * meta->opts.pq_centroid_num);
           computePrecomputeTable(meta, &so->state, so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable);
         }
+        float4 * residual = (float4 *)palloc0(sizeof(float4) * meta->opts.dimension);
         ScanInvertedListAndCalDistance(scan->indexRelation, meta,
             &so->state, citems[i].head_ivl_blkno,
-            so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable, so->queue, (pthread_mutex_t *)NULL);
+            so->scan_pase->x, citems[i].ctup, pqtuples, precomputedTable, residual, so->queue, (pthread_mutex_t *)NULL);
         pfree(citems[i].ctup);
         if (meta->opts.use_precomputedtable)
           pfree(precomputedTable);
+        pfree(residual);
       }
     }
     if (!pairingheap_is_empty(so->queue)) {
