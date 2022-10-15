@@ -184,7 +184,7 @@ ScanInvertedListAndCalDistance(Relation index, IvfpqMetaPageData *meta,
   int                    i;
   float                  dis;
   PqInvertedListSearchItem *item;
-  float4                 *residual;
+  //float4                 *residual;
   int                    dim;
 
   blkno = headBlkno;
